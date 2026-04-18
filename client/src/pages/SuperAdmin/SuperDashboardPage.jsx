@@ -90,7 +90,7 @@ export default function SuperDashboardPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5 sm:space-y-8">
       {/* Header */}
       <div className="page-header">
         <div>
