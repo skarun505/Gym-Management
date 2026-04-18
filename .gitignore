@@ -1,0 +1,53 @@
+# ── Environment / Secrets ──────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+*.env
+
+# ── Node.js ────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ── Vite / Build output ────────────────────────────────────────
+client/dist/
+client/.vite/
+dist/
+build/
+
+# ── Server build ───────────────────────────────────────────────
+server/dist/
+
+# ── Logs ───────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── OS files ───────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
+
+# ── Editor / IDE ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+
+# ── TypeScript ─────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ── Coverage ───────────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ── Supabase local dev ─────────────────────────────────────────
+.supabase/
+supabase/.temp/

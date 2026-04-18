@@ -1,0 +1,52 @@
+{
+  "name": "GymPro Management",
+  "short_name": "GymPro",
+  "description": "Complete Gym Management — Members, Attendance, Subscriptions & More",
+  "start_url": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "any",
+  "scope": "/",
+  "lang": "en",
+  "categories": ["business", "fitness"],
+  "icons": [
+    {
+      "src": "/icon-512.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Home",
+      "description": "Go to gym dashboard",
+      "url": "/",
+      "icons": [{ "src": "/icon-512.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Members",
+      "short_name": "Members",
+      "description": "View gym members",
+      "url": "/members",
+      "icons": [{ "src": "/icon-512.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Attendance",
+      "short_name": "Attendance",
+      "description": "Mark attendance",
+      "url": "/attendance",
+      "icons": [{ "src": "/icon-512.svg", "sizes": "any" }]
+    }
+  ]
+}
