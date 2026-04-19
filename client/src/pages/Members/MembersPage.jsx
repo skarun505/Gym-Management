@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck } from 'lucide-react';
+import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
@@ -202,11 +202,43 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
         },
   });
 
+  const [activeTab, setActiveTab]   = useState('info');
   const [showPlanSection, setShowPlanSection] = useState(!member?.id);
+  const [activeSub, setActiveSub]   = useState(null);
+  const [subLoading, setSubLoading] = useState(false);
+  const [subForm, setSubForm]       = useState(null);
+  const [subSaving, setSubSaving]   = useState(false);
+
   const planId    = watch('plan_id');
   const startDate = watch('start_date');
 
   useEffect(() => { reset(member ? { ...member } : { status: 'active', start_date: new Date().toISOString().split('T')[0] }); }, [member]);
+
+  // Load active subscription when editing
+  useEffect(() => {
+    if (!member?.id) return;
+    setSubLoading(true);
+    supabase
+      .from('member_subscriptions')
+      .select('*, subscription_plans(plan_name, duration, price)')
+      .eq('member_id', member.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+      .then(({ data }) => {
+        const active = (data || []).find(s => s.status === 'active') || data?.[0] || null;
+        setActiveSub(active);
+        if (active) {
+          setSubForm({
+            plan_id:    active.plan_id,
+            start_date: active.start_date,
+            end_date:   active.end_date,
+            status:     active.status,
+            notes:      active.notes || '',
+          });
+        }
+        setSubLoading(false);
+      });
+  }, [member?.id]);
 
   // Auto-compute end date when plan + start change
   useEffect(() => {
@@ -215,6 +247,45 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
       if (plan) setValue('end_date', computeEndDate(startDate, plan.duration));
     }
   }, [planId, startDate]);
+
+  // Auto-compute end date for subscription form
+  const handleSubPlanChange = (planId) => {
+    const plan = plans.find(p => p.id === planId);
+    setSubForm(f => ({
+      ...f,
+      plan_id: planId,
+      ...(plan && f.start_date ? { end_date: computeEndDate(f.start_date, plan.duration) } : {}),
+    }));
+  };
+
+  const handleSubStartChange = (date) => {
+    const plan = plans.find(p => p.id === subForm?.plan_id);
+    setSubForm(f => ({
+      ...f,
+      start_date: date,
+      ...(plan && date ? { end_date: computeEndDate(date, plan.duration) } : {}),
+    }));
+  };
+
+  const saveSubscription = async () => {
+    if (!activeSub?.id || !subForm) return;
+    setSubSaving(true);
+    try {
+      const { error } = await supabase.from('member_subscriptions').update({
+        plan_id:    subForm.plan_id,
+        start_date: subForm.start_date,
+        end_date:   subForm.end_date,
+        status:     subForm.status,
+        notes:      subForm.notes,
+      }).eq('id', activeSub.id);
+      if (error) throw error;
+      toast.success('Subscription updated!');
+    } catch (err) {
+      toast.error(err.message || 'Failed to update subscription');
+    } finally {
+      setSubSaving(false);
+    }
+  };
 
   const onSubmit = async (data) => {
     try {
@@ -289,162 +360,309 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-          {/* ── Member Info ─────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="label">Full Name *</label>
-              <input {...register('full_name', { required: true })} className="input-field" placeholder="Full Name" />
-            </div>
-            <div>
-              <label className="label">Phone</label>
-              <input {...register('phone')} className="input-field" placeholder="+91 98765 43210" />
-            </div>
-            <div>
-              <label className="label">Email</label>
-              <input {...register('email')} type="email" className="input-field" placeholder="member@email.com" />
-            </div>
-            <div>
-              <label className="label">Date of Birth</label>
-              <input {...register('dob')} type="date" className="input-field" />
-            </div>
-            <div>
-              <label className="label">Status</label>
-              <select {...register('status')} className="input-field">
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label className="label">Address</label>
-              <textarea {...register('address')} className="input-field" rows={2} placeholder="Address" />
-            </div>
-            <div className="col-span-2">
-              <label className="label">Fitness Goal</label>
-              <input {...register('fitness_goal')} className="input-field" placeholder="Weight loss, muscle gain, general fitness..." />
-            </div>
-            <div className="col-span-2">
-              <label className="label">Health Notes</label>
-              <textarea {...register('health_notes')} className="input-field" rows={2} placeholder="Any medical conditions, allergies..." />
-            </div>
-          </div>
-
-          {/* ── Subscription Plan (new members only) ─────── */}
-          {!member?.id && (
-            <div className="border border-white/8 rounded-2xl overflow-hidden">
-              {/* Section header toggle */}
+        {/* Tabs — only shown when editing */}
+        {member?.id && (
+          <div className="flex border-b border-white/5">
+            {[{ id: 'info', label: 'Personal Info' }, { id: 'subscription', label: 'Subscription' }].map(t => (
               <button
-                type="button"
-                onClick={() => setShowPlanSection(p => !p)}
-                className="w-full flex items-center justify-between px-5 py-3.5 bg-dark-700/50 hover:bg-dark-700 transition-colors"
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                  activeTab === t.id
+                    ? 'border-primary-500 text-white'
+                    : 'border-transparent text-gray-500 hover:text-gray-300'
+                }`}
               >
-                <div className="flex items-center gap-2.5">
-                  <CreditCard className="w-4 h-4 text-primary-400" />
-                  <span className="text-white font-semibold text-sm">Assign Subscription Plan</span>
-                  {!showPlanSection && (
-                    <span className="text-[11px] text-gray-500 bg-dark-600 px-2 py-0.5 rounded-full">Optional</span>
-                  )}
-                </div>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showPlanSection ? 'rotate-180' : ''}`} />
+                {t.label}
               </button>
-
-              {showPlanSection && (
-                <div className="p-5 space-y-4">
-                  {plans.length === 0 ? (
-                    <p className="text-gray-500 text-sm text-center py-2">
-                      No plans found — create plans first in the Subscriptions page.
-                    </p>
-                  ) : (
-                    <>
-                      {/* Plan cards (radio style) */}
-                      <div>
-                        <label className="label">Select Plan</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                          {plans.map(p => (
-                            <label
-                              key={p.id}
-                              className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                                planId === p.id
-                                  ? 'border-primary-500 bg-primary-600/15'
-                                  : 'border-white/8 hover:border-white/20 bg-dark-700/40'
-                              }`}
-                            >
-                              <input
-                                {...register('plan_id')}
-                                type="radio"
-                                value={p.id}
-                                className="accent-primary-500 w-4 h-4 flex-shrink-0"
-                              />
-                              <div className="min-w-0">
-                                <p className="text-white text-sm font-semibold truncate">{p.plan_name}</p>
-                                <p className="text-gray-400 text-xs">
-                                  ₹{p.price} · <span className="capitalize">{p.duration}</span>
-                                </p>
-                              </div>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Dates */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="label">Purchase / Start Date *</label>
-                          <input {...register('start_date')} type="date" className="input-field" />
-                        </div>
-                        <div>
-                          <label className="label">
-                            End Date
-                            <span className="text-primary-400 text-[10px] ml-1">(auto-filled)</span>
-                          </label>
-                          <input {...register('end_date')} type="date" className="input-field" />
-                        </div>
-                      </div>
-
-                      {/* Reminder preview */}
-                      {selectedPlan && watch('end_date') && (
-                        <div className="bg-dark-700/60 rounded-xl p-4 space-y-2">
-                          <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">
-                            🔔 Auto-Reminders Scheduled
-                          </p>
-                          {[
-                            { label: '7 days before', days: 7,  color: 'text-amber-400' },
-                            { label: '3 days before', days: 3,  color: 'text-orange-400' },
-                            { label: '24 hrs before', days: 1,  color: 'text-red-400' },
-                          ].map(({ label, days, color }) => {
-                            const d = new Date(watch('end_date'));
-                            d.setDate(d.getDate() - days);
-                            return (
-                              <div key={label} className="flex items-center justify-between text-sm">
-                                <span className={`${color} font-medium flex items-center gap-1.5`}>
-                                  <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                                  {label}
-                                </span>
-                                <span className="text-gray-500 text-xs">
-                                  {d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                                </span>
-                              </div>
-                            );
-                          })}
-                          <p className="text-[11px] text-gray-600 border-t border-white/5 pt-2 mt-1">
-                            Reminders shown in Dashboard & Member Portal. No reminder after payment confirmed.
-                          </p>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button type="submit" disabled={isSubmitting} className="btn-primary flex-1">
-              {isSubmitting ? 'Saving...' : member?.id ? 'Save Changes' : 'Add Member'}
-            </button>
+            ))}
           </div>
-        </form>
+        )}
+
+        {/* ── Info Tab ───────────────────────── */}
+        {(activeTab === 'info' || !member?.id) && (
+          <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+            {/* ── Member Info ─────────────────────────────── */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="label">Full Name *</label>
+                <input {...register('full_name', { required: true })} className="input-field" placeholder="Full Name" />
+              </div>
+              <div>
+                <label className="label">Phone</label>
+                <input {...register('phone')} className="input-field" placeholder="+91 98765 43210" />
+              </div>
+              <div>
+                <label className="label">Email</label>
+                <input {...register('email')} type="email" className="input-field" placeholder="member@email.com" />
+              </div>
+              <div>
+                <label className="label">Date of Birth</label>
+                <input {...register('dob')} type="date" className="input-field" />
+              </div>
+              <div>
+                <label className="label">Status</label>
+                <select {...register('status')} className="input-field">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="label">Address</label>
+                <textarea {...register('address')} className="input-field" rows={2} placeholder="Address" />
+              </div>
+              <div className="col-span-2">
+                <label className="label">Fitness Goal</label>
+                <input {...register('fitness_goal')} className="input-field" placeholder="Weight loss, muscle gain, general fitness..." />
+              </div>
+              <div className="col-span-2">
+                <label className="label">Health Notes</label>
+                <textarea {...register('health_notes')} className="input-field" rows={2} placeholder="Any medical conditions, allergies..." />
+              </div>
+            </div>
+
+            {/* ── Subscription Plan (new members only) ─────── */}
+            {!member?.id && (
+              <div className="border border-white/8 rounded-2xl overflow-hidden">
+                {/* Section header toggle */}
+                <button
+                  type="button"
+                  onClick={() => setShowPlanSection(p => !p)}
+                  className="w-full flex items-center justify-between px-5 py-3.5 bg-dark-700/50 hover:bg-dark-700 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <CreditCard className="w-4 h-4 text-primary-400" />
+                    <span className="text-white font-semibold text-sm">Assign Subscription Plan</span>
+                    {!showPlanSection && (
+                      <span className="text-[11px] text-gray-500 bg-dark-600 px-2 py-0.5 rounded-full">Optional</span>
+                    )}
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showPlanSection ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showPlanSection && (
+                  <div className="p-5 space-y-4">
+                    {plans.length === 0 ? (
+                      <p className="text-gray-500 text-sm text-center py-2">
+                        No plans found — create plans first in the Subscriptions page.
+                      </p>
+                    ) : (
+                      <>
+                        {/* Plan cards (radio style) */}
+                        <div>
+                          <label className="label">Select Plan</label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                            {plans.map(p => (
+                              <label
+                                key={p.id}
+                                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                                  planId === p.id
+                                    ? 'border-primary-500 bg-primary-600/15'
+                                    : 'border-white/8 hover:border-white/20 bg-dark-700/40'
+                                }`}
+                              >
+                                <input
+                                  {...register('plan_id')}
+                                  type="radio"
+                                  value={p.id}
+                                  className="accent-primary-500 w-4 h-4 flex-shrink-0"
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-white text-sm font-semibold truncate">{p.plan_name}</p>
+                                  <p className="text-gray-400 text-xs">
+                                    ₹{p.price} · <span className="capitalize">{p.duration}</span>
+                                  </p>
+                                </div>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Dates */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="label">Purchase / Start Date *</label>
+                            <input {...register('start_date')} type="date" className="input-field" />
+                          </div>
+                          <div>
+                            <label className="label">
+                              End Date
+                              <span className="text-primary-400 text-[10px] ml-1">(auto-filled)</span>
+                            </label>
+                            <input {...register('end_date')} type="date" className="input-field" />
+                          </div>
+                        </div>
+
+                        {/* Reminder preview */}
+                        {selectedPlan && watch('end_date') && (
+                          <div className="bg-dark-700/60 rounded-xl p-4 space-y-2">
+                            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">
+                              🔔 Auto-Reminders Scheduled
+                            </p>
+                            {[
+                              { label: '7 days before', days: 7,  color: 'text-amber-400' },
+                              { label: '3 days before', days: 3,  color: 'text-orange-400' },
+                              { label: '24 hrs before', days: 1,  color: 'text-red-400' },
+                            ].map(({ label, days, color }) => {
+                              const d = new Date(watch('end_date'));
+                              d.setDate(d.getDate() - days);
+                              return (
+                                <div key={label} className="flex items-center justify-between text-sm">
+                                  <span className={`${color} font-medium flex items-center gap-1.5`}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                                    {label}
+                                  </span>
+                                  <span className="text-gray-500 text-xs">
+                                    {d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            <p className="text-[11px] text-gray-600 border-t border-white/5 pt-2 mt-1">
+                              Reminders shown in Dashboard & Member Portal. No reminder after payment confirmed.
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+              <button type="submit" disabled={isSubmitting} className="btn-primary flex-1">
+                {isSubmitting ? 'Saving...' : member?.id ? 'Save Changes' : 'Add Member'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── Subscription Tab (edit only) ──────────────── */}
+        {member?.id && activeTab === 'subscription' && (
+          <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+            {subLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <div className="w-6 h-6 border-2 border-primary-500/30 border-t-primary-500 rounded-full animate-spin" />
+              </div>
+            ) : !activeSub ? (
+              <div className="text-center py-10">
+                <CreditCard className="w-10 h-10 text-gray-700 mx-auto mb-3" />
+                <p className="text-gray-400 font-medium">No subscription found</p>
+                <p className="text-gray-600 text-sm mt-1">Assign a plan from the Subscriptions page</p>
+              </div>
+            ) : (
+              <>
+                {/* Current plan info */}
+                <div className="bg-dark-700/60 rounded-xl p-4 border border-white/5">
+                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Current Subscription</p>
+                  <p className="text-white font-semibold">{activeSub.subscription_plans?.plan_name}</p>
+                  <p className="text-gray-400 text-sm capitalize">
+                    {activeSub.subscription_plans?.duration} · ₹{activeSub.subscription_plans?.price}
+                  </p>
+                </div>
+
+                {/* Change Plan */}
+                {plans.length > 0 && (
+                  <div>
+                    <label className="label">Change Plan</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                      {plans.map(p => (
+                        <label
+                          key={p.id}
+                          className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                            subForm?.plan_id === p.id
+                              ? 'border-primary-500 bg-primary-600/15'
+                              : 'border-white/8 hover:border-white/20 bg-dark-700/40'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="sub_plan"
+                            value={p.id}
+                            checked={subForm?.plan_id === p.id}
+                            onChange={() => handleSubPlanChange(p.id)}
+                            className="accent-primary-500 w-4 h-4 flex-shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-white text-sm font-semibold truncate">{p.plan_name}</p>
+                            <p className="text-gray-400 text-xs">₹{p.price} · <span className="capitalize">{p.duration}</span></p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Dates */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Start Date</label>
+                    <input
+                      type="date"
+                      value={subForm?.start_date || ''}
+                      onChange={e => handleSubStartChange(e.target.value)}
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">
+                      End Date
+                      <span className="text-primary-400 text-[10px] ml-1">(auto-filled)</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={subForm?.end_date || ''}
+                      onChange={e => setSubForm(f => ({ ...f, end_date: e.target.value }))}
+                      className="input-field"
+                    />
+                  </div>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="label">Subscription Status</label>
+                  <select
+                    value={subForm?.status || 'active'}
+                    onChange={e => setSubForm(f => ({ ...f, status: e.target.value }))}
+                    className="input-field"
+                  >
+                    <option value="active">Active</option>
+                    <option value="expired">Expired</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="label">Notes</label>
+                  <textarea
+                    value={subForm?.notes || ''}
+                    onChange={e => setSubForm(f => ({ ...f, notes: e.target.value }))}
+                    className="input-field"
+                    rows={2}
+                    placeholder="Optional notes..."
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-1">
+                  <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+                  <button
+                    onClick={saveSubscription}
+                    disabled={subSaving}
+                    className="btn-primary flex-1 flex items-center justify-center gap-2"
+                  >
+                    {subSaving
+                      ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      : <Save className="w-4 h-4" />}
+                    {subSaving ? 'Saving...' : 'Update Subscription'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

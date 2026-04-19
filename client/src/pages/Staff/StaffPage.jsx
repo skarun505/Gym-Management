@@ -30,24 +30,27 @@ function StaffModal({ staff, gymId, onClose, onSave }) {
       if (staff?.id) {
         const { error } = await supabase.from('staff').update({
           full_name: data.full_name,
-          role: data.role,
-          status: data.status,
-          phone: data.phone,
-          email: data.email,
+          role:      data.role,
+          status:    data.status,
+          phone:     data.phone,
+          email:     data.email,
           shift_info: data.shift_info,
+          dob:       data.dob || null,
+          salary:    data.salary ? Number(data.salary) : null,
         }).eq('id', staff.id);
         if (error) throw error;
         toast.success('Staff updated!');
       } else {
-        // Create a new staff profile entry (no auth user needed for staff in this phase)
         const { error } = await supabase.from('staff').insert({
-          gym_id: gymId,
+          gym_id:    gymId,
           full_name: data.full_name,
-          role: data.role,
-          status: data.status || 'active',
-          phone: data.phone,
-          email: data.email,
+          role:      data.role,
+          status:    data.status || 'active',
+          phone:     data.phone,
+          email:     data.email,
           shift_info: data.shift_info,
+          dob:       data.dob || null,
+          salary:    data.salary ? Number(data.salary) : null,
         });
         if (error) throw error;
         toast.success('Staff added!');
@@ -96,6 +99,16 @@ function StaffModal({ staff, gymId, onClose, onSave }) {
             <div>
               <label className="label">Email</label>
               <input {...register('email')} type="email" className="input-field" placeholder="staff@email.com" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Date of Birth</label>
+              <input {...register('dob')} type="date" className="input-field" />
+            </div>
+            <div>
+              <label className="label">Salary (₹)</label>
+              <input {...register('salary')} type="number" className="input-field" placeholder="e.g. 15000" />
             </div>
           </div>
           <div>
@@ -187,7 +200,7 @@ export default function StaffPage() {
                         </span>
                       </div>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1">
                       <button onClick={() => setModalStaff(s)} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5">
                         <Edit2 className="w-4 h-4" />
                       </button>
@@ -201,6 +214,8 @@ export default function StaffPage() {
                     {s.phone && <p className="flex items-center gap-2">📱 {s.phone}</p>}
                     {s.email && <p className="flex items-center gap-2 truncate">✉️ {s.email}</p>}
                     {s.shift_info && <p className="flex items-center gap-2">🕐 {s.shift_info}</p>}
+                    {s.dob && <p className="flex items-center gap-2">🎂 {new Date(s.dob).toLocaleDateString('en-IN')}</p>}
+                    {s.salary && <p className="flex items-center gap-2">💰 ₹{s.salary.toLocaleString('en-IN')}/mo</p>}
                   </div>
 
                   <div className="mt-3 pt-3 border-t border-white/5">

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, X, Building2, Search, Eye, EyeOff,
   Copy, CheckCircle, AlertCircle, RefreshCw,
-  ShieldOff, ShieldCheck, ChevronDown
+  ShieldOff, ShieldCheck, ChevronDown, Edit2, Save
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
@@ -79,6 +79,145 @@ function CredentialsModal({ credentials, onClose }) {
             </button>
             <button onClick={onClose} className="btn-secondary">Done</button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Edit Gym Modal ────────────────────────────────────────────
+function EditGymModal({ gym, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name:       gym.name || '',
+    owner_name: gym.owner_name || '',
+    phone:      gym.phone || '',
+    address:    gym.address || '',
+    plan:       gym.plan || 'trial',
+    theme_color: gym.theme_color || '#a21cce',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  const handleSave = async () => {
+    if (!form.name || !form.owner_name) {
+      toast.error('Gym name and owner name are required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('gyms').update({
+        name:        form.name,
+        owner_name:  form.owner_name,
+        phone:       form.phone,
+        address:     form.address,
+        plan:        form.plan,
+        theme_color: form.theme_color,
+      }).eq('id', gym.id);
+      if (error) throw error;
+      toast.success(`${form.name} updated!`);
+      onSaved();
+    } catch (err) {
+      toast.error(err.message || 'Failed to update gym');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const colors = ['#a21cce', '#2563eb', '#059669', '#dc2626', '#d97706', '#7c3aed', '#0891b2'];
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-content max-w-2xl" onClick={e => e.stopPropagation()}>
+        <div className="p-6 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+              <Edit2 className="w-4 h-4 text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Edit Gym</h2>
+              <p className="text-xs text-gray-500 mt-0.5 font-mono">{gym.gym_code}</p>
+            </div>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+
+        <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh]">
+          {/* Gym Info */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Gym Information</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="label">Gym Name *</label>
+                <input value={form.name} onChange={e => set('name', e.target.value)} className="input-field" placeholder="Planet Fitness Chennai" />
+              </div>
+              <div>
+                <label className="label">Owner Name *</label>
+                <input value={form.owner_name} onChange={e => set('owner_name', e.target.value)} className="input-field" placeholder="Rajesh Kumar" />
+              </div>
+              <div>
+                <label className="label">Phone</label>
+                <input value={form.phone} onChange={e => set('phone', e.target.value)} className="input-field" placeholder="+91 98765 43210" />
+              </div>
+              <div className="col-span-2">
+                <label className="label">Address</label>
+                <input value={form.address} onChange={e => set('address', e.target.value)} className="input-field" placeholder="123 Anna Salai, Chennai" />
+              </div>
+            </div>
+          </div>
+
+          {/* Plan & Theme */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Plan & Branding</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Subscription Plan</label>
+                <div className="relative">
+                  <select value={form.plan} onChange={e => set('plan', e.target.value)} className="input-field appearance-none pr-8">
+                    <option value="trial">Trial (30 days)</option>
+                    <option value="basic">Basic</option>
+                    <option value="pro">Pro</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+              <div>
+                <label className="label">Brand Color (theme)</label>
+                <div className="flex gap-2 mt-1 flex-wrap">
+                  {colors.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => set('theme_color', c)}
+                      className={`w-8 h-8 rounded-full transition-transform ${form.theme_color === c ? 'scale-125 ring-2 ring-white/40' : 'hover:scale-110'}`}
+                      style={{ background: c }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={form.theme_color}
+                    onChange={e => set('theme_color', e.target.value)}
+                    className="w-8 h-8 rounded-full cursor-pointer border-0 bg-transparent"
+                    title="Custom color"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-white/5 flex gap-3">
+          <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="btn-primary flex-1 justify-center gap-2"
+          >
+            {saving
+              ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              : <Save className="w-4 h-4" />}
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       </div>
     </div>
@@ -323,6 +462,7 @@ export default function GymsPage() {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [credentials, setCredentials] = useState(null);
+  const [editGym, setEditGym] = useState(null);
 
   const fetchGyms = useCallback(async () => {
     setLoading(true);
@@ -482,20 +622,29 @@ export default function GymsPage() {
                     {new Date(gym.created_at).toLocaleDateString('en-IN')}
                   </td>
                   <td>
-                    <button
-                      onClick={() => toggleStatus(gym)}
-                      className={`p-1.5 rounded-lg transition-colors ${
-                        gym.status === 'active'
-                          ? 'text-gray-400 hover:text-red-400 hover:bg-red-500/10'
-                          : 'text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10'
-                      }`}
-                      title={gym.status === 'active' ? 'Suspend' : 'Reactivate'}
-                    >
-                      {gym.status === 'active'
-                        ? <ShieldOff className="w-4 h-4" />
-                        : <ShieldCheck className="w-4 h-4" />
-                      }
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setEditGym(gym)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                        title="Edit gym details"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => toggleStatus(gym)}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          gym.status === 'active'
+                            ? 'text-gray-400 hover:text-red-400 hover:bg-red-500/10'
+                            : 'text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10'
+                        }`}
+                        title={gym.status === 'active' ? 'Suspend' : 'Reactivate'}
+                      >
+                        {gym.status === 'active'
+                          ? <ShieldOff className="w-4 h-4" />
+                          : <ShieldCheck className="w-4 h-4" />
+                        }
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -519,6 +668,13 @@ export default function GymsPage() {
         <CredentialsModal
           credentials={credentials}
           onClose={() => setCredentials(null)}
+        />
+      )}
+      {editGym && (
+        <EditGymModal
+          gym={editGym}
+          onClose={() => setEditGym(null)}
+          onSaved={() => { setEditGym(null); fetchGyms(); }}
         />
       )}
     </div>
