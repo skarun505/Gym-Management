@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw } from 'lucide-react';
+import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw, Camera, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
@@ -209,6 +209,40 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
   const [subForm, setSubForm]       = useState(null);
   const [subSaving, setSubSaving]   = useState(false);
 
+  // Photo upload state
+  const [photoPreview, setPhotoPreview] = useState(member?.photo_url || null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoInputRef = useRef(null);
+
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Local preview
+    const objectUrl = URL.createObjectURL(file);
+    setPhotoPreview(objectUrl);
+    // Upload to Supabase Storage
+    setPhotoUploading(true);
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `${gymId}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('member-photos')
+        .upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: { publicUrl } } = supabase.storage
+        .from('member-photos')
+        .getPublicUrl(path);
+      setValue('photo_url', publicUrl);
+      setPhotoPreview(publicUrl);
+      toast.success('Photo uploaded!');
+    } catch (err) {
+      toast.error('Photo upload failed: ' + err.message);
+      setPhotoPreview(member?.photo_url || null);
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
   const planId    = watch('plan_id');
   const startDate = watch('start_date');
 
@@ -299,6 +333,7 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
           email:        data.email,
           dob:          data.dob || null,
           address:      data.address,
+          photo_url:    data.photo_url || null,
           fitness_goal: data.fitness_goal,
           health_notes: data.health_notes,
           status:       data.status,
@@ -315,6 +350,7 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
           email:        data.email,
           dob:          data.dob || null,
           address:      data.address,
+          photo_url:    data.photo_url || null,
           fitness_goal: data.fitness_goal,
           health_notes: data.health_notes,
           status:       data.status || 'active',
@@ -354,9 +390,55 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content max-w-2xl" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b border-white/5 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">
-            {member?.id ? 'Edit Member' : 'Add Member'}
-          </h2>
+          <div className="flex items-center gap-3">
+            {/* Photo avatar with upload trigger */}
+            <div className="relative flex-shrink-0">
+              <div
+                onClick={() => photoInputRef.current?.click()}
+                className="w-14 h-14 rounded-2xl overflow-hidden bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center cursor-pointer ring-2 ring-white/10 hover:ring-primary-500/60 transition-all group"
+                title="Click to upload photo"
+              >
+                {photoPreview ? (
+                  <img src={photoPreview} alt="member" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-white text-xl font-bold">
+                    {watch('full_name')?.charAt(0) || '?'}
+                  </span>
+                )}
+                {/* Overlay */}
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl">
+                  {photoUploading
+                    ? <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    : <Camera className="w-5 h-5 text-white" />}
+                </div>
+              </div>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handlePhotoChange}
+              />
+              {/* Hidden form field for photo_url */}
+              <input type="hidden" {...register('photo_url')} />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">
+                {member?.id ? 'Edit Member' : 'Add Member'}
+              </h2>
+              {member?.member_code && (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Admission ID</span>
+                  <span className="font-mono text-primary-400 text-xs font-bold bg-primary-500/10 px-2 py-0.5 rounded-full border border-primary-500/20">
+                    {member.member_code}
+                  </span>
+                </div>
+              )}
+              {!member?.id && (
+                <p className="text-gray-500 text-xs mt-0.5">Click avatar to add photo</p>
+              )}
+            </div>
+          </div>
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
         </div>
 
@@ -811,8 +893,10 @@ export default function MembersPage() {
                   <tr key={m.id}>
                     <td>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                          {m.full_name.charAt(0)}
+                        <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ring-1 ring-white/10">
+                          {m.photo_url
+                            ? <img src={m.photo_url} alt={m.full_name} className="w-full h-full object-cover" />
+                            : m.full_name.charAt(0)}
                         </div>
                         <span className="font-medium text-white">{m.full_name}</span>
                       </div>
