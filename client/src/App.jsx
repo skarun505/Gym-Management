@@ -27,6 +27,8 @@ import GymSettingsPage from './pages/Settings/GymSettingsPage';
 // Super Admin Portal
 import SuperDashboardPage from './pages/SuperAdmin/SuperDashboardPage';
 import GymsPage from './pages/SuperAdmin/GymsPage';
+import SuperMembersPage from './pages/SuperAdmin/SuperMembersPage';
+import SuperStaffPage from './pages/SuperAdmin/SuperStaffPage';
 
 // Layouts
 import MemberLayout from './components/layout/MemberLayout';
@@ -78,7 +80,9 @@ export default function App() {
           }
         >
           <Route index element={<SuperDashboardPage />} />
-          <Route path="gyms" element={<GymsPage />} />
+          <Route path="gyms"    element={<GymsPage />} />
+          <Route path="members" element={<SuperMembersPage />} />
+          <Route path="staff"   element={<SuperStaffPage />} />
         </Route>
 
         {/* ── Gym Management Portal (gym_owner + staff) ── */}

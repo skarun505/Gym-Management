@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Building2, LogOut, Shield, ChevronRight, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Building2, LogOut, Shield, ChevronRight, Menu, X, Users, Dumbbell } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 
 const navItems = [
-  { to: '/super-admin',       label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/super-admin/gyms',  label: 'Gyms',      icon: Building2 },
+  { to: '/super-admin',         label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/super-admin/gyms',    label: 'Gyms',      icon: Building2 },
+  { to: '/super-admin/members', label: 'Members',   icon: Users },
+  { to: '/super-admin/staff',   label: 'Staff',     icon: Dumbbell },
 ];
 
 export default function SuperAdminLayout() {
