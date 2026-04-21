@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { User, Phone, Mail, MapPin, Target, LogOut, Edit2, Save, X, Scale } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Target, LogOut, Edit2, Save, X, Scale, Bell, BellOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { usePushNotifications } from '../../hooks/usePushNotifications';
 
 export default function MemberProfilePage() {
   const { user, logout } = useAuthStore();
@@ -13,6 +14,7 @@ export default function MemberProfilePage() {
   const [latestMeasure, setLatestMeasure] = useState(null);
   const [editing, setEditing]   = useState(false);
   const [loading, setLoading]   = useState(true);
+  const { isSupported: pushSupported, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm();
 
@@ -208,6 +210,51 @@ export default function MemberProfilePage() {
           </div>
         )}
       </div>
+
+      {/* Push Notifications */}
+      {pushSupported && (
+        <div className="px-5 pb-4">
+          <div className="card p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                  isSubscribed ? 'bg-primary-600/20' : 'bg-dark-600'
+                }`}>
+                  {isSubscribed
+                    ? <Bell className="w-4 h-4 text-primary-400" />
+                    : <BellOff className="w-4 h-4 text-gray-500" />}
+                </div>
+                <div>
+                  <p className="text-white font-semibold text-sm">Push Notifications</p>
+                  <p className="text-gray-500 text-xs mt-0.5">
+                    {isSubscribed ? '✅ Enabled on this device' : 'Get expiry & gym alerts'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  if (isSubscribed) {
+                    const ok = await unsubscribe();
+                    if (ok) toast.success('Notifications disabled');
+                  } else {
+                    const ok = await subscribe();
+                    if (ok) toast.success('🔔 Notifications enabled!');
+                    else toast.error('Please allow notifications in browser settings');
+                  }
+                }}
+                disabled={pushLoading}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                  isSubscribed
+                    ? 'border-red-500/30 text-red-400 hover:bg-red-500/10'
+                    : 'border-primary-500/40 text-primary-400 bg-primary-600/10 hover:bg-primary-600/20'
+                }`}
+              >
+                {pushLoading ? '...' : isSubscribed ? 'Turn Off' : 'Enable'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sign Out */}
       <div className="px-5 pb-6">

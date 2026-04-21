@@ -12,6 +12,7 @@ function computeEndDate(startDate, duration) {
   const d = new Date(startDate);
   if (duration === 'monthly') d.setMonth(d.getMonth() + 1);
   else if (duration === 'quarterly') d.setMonth(d.getMonth() + 3);
+  else if (duration === 'half_yearly') d.setMonth(d.getMonth() + 6);
   else if (duration === 'yearly') d.setFullYear(d.getFullYear() + 1);
   return d.toISOString().split('T')[0];
 }
@@ -133,6 +134,7 @@ function EditPlanModal({ plan, onClose, onSave }) {
             <select value={form.duration} onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} className="input-field">
               <option value="monthly">Monthly</option>
               <option value="quarterly">Quarterly</option>
+              <option value="half_yearly">Half Yearly (6 months)</option>
               <option value="yearly">Yearly</option>
             </select>
           </div>
@@ -294,6 +296,7 @@ function PlanModal({ gymId, onClose, onSave }) {
             <select {...register('duration', { required: true })} className="input-field">
               <option value="monthly">Monthly</option>
               <option value="quarterly">Quarterly</option>
+              <option value="half_yearly">Half Yearly (6 months)</option>
               <option value="yearly">Yearly</option>
             </select>
           </div>

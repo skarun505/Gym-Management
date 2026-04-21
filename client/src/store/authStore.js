@@ -5,6 +5,7 @@ const useAuthStore = create((set, get) => ({
   user: JSON.parse(localStorage.getItem('gym_user') || 'null'),
   session: null,
   isLoading: false,
+  initialized: false,   // true once restoreSession() has completed
   error: null,
 
   // ── Login ──────────────────────────────────────────────
@@ -59,7 +60,8 @@ const useAuthStore = create((set, get) => ({
   // ── Restore session on app load ────────────────────────
   restoreSession: async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (session && !get().user) {
+
+    if (session) {
       const { data: profile } = await supabase
         .from('profiles')
         .select('*, gyms(id, name, theme_color, logo_url, gym_code, owner_name, phone, address, plan, status)')
@@ -81,13 +83,52 @@ const useAuthStore = create((set, get) => ({
           gym: profile.gyms || null,
         };
         localStorage.setItem('gym_user', JSON.stringify(user));
-        set({ user, session });
+        set({ user, session, initialized: true });
+        return;
       }
     }
-    if (!session) {
-      localStorage.removeItem('gym_user');
-      set({ user: null, session: null });
-    }
+
+    // No valid session — clear any stale cache
+    localStorage.removeItem('gym_user');
+    set({ user: null, session: null, initialized: true });
+  },
+
+  // ── Listen for Supabase auth changes (token refresh, sign-out) ──
+  listenToAuthChanges: () => {
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        // Only clear if this wasn't triggered by our own logout()
+        if (get().user) {
+          localStorage.removeItem('gym_user');
+          set({ user: null, session: null });
+        }
+        return;
+      }
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
+        // Re-hydrate profile so user object stays fresh after token refresh
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*, gyms(id, name, theme_color, logo_url, gym_code, owner_name, phone, address, plan, status)')
+          .eq('id', session.user.id)
+          .single();
+        if (profile) {
+          const themeColor = profile.gyms?.theme_color || '#a21cce';
+          document.documentElement.style.setProperty('--color-brand', themeColor);
+          const user = {
+            id: profile.id,
+            name: profile.full_name,
+            email: session.user.email,
+            role: profile.role,
+            sub_role: profile.sub_role,
+            photo_url: profile.photo_url,
+            gym_id: profile.gym_id,
+            gym: profile.gyms || null,
+          };
+          localStorage.setItem('gym_user', JSON.stringify(user));
+          set({ user, session });
+        }
+      }
+    });
   },
 
   clearError: () => set({ error: null }),

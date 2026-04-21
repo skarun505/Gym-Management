@@ -2,19 +2,22 @@ import { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Clock, CreditCard,
-  UserCog, Package, BarChart3, LogOut, Dumbbell, Settings, Menu, X
+  UserCog, Package, BarChart3, LogOut, Dumbbell, Settings, Menu, X,
+  IndianRupee, Megaphone,
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 
 const navItems = [
-  { to: '/',             label: 'Dashboard',    icon: LayoutDashboard },
-  { to: '/members',      label: 'Members',      icon: Users },
-  { to: '/attendance',   label: 'Attendance',   icon: Clock },
-  { to: '/subscriptions',label: 'Subscriptions',icon: CreditCard },
-  { to: '/staff',        label: 'Staff',        icon: UserCog,   roles: ['gym_owner'] },
-  { to: '/inventory',    label: 'Inventory',    icon: Package,   roles: ['gym_owner'] },
-  { to: '/reports',      label: 'Reports',      icon: BarChart3, roles: ['gym_owner'] },
-  { to: '/settings',     label: 'Settings',     icon: Settings,  roles: ['gym_owner'] },
+  { to: '/',               label: 'Dashboard',      icon: LayoutDashboard },
+  { to: '/members',        label: 'Members',        icon: Users },
+  { to: '/attendance',     label: 'Attendance',     icon: Clock },
+  { to: '/subscriptions',  label: 'Subscriptions',  icon: CreditCard },
+  { to: '/revenue',        label: 'Revenue',        icon: IndianRupee,  roles: ['gym_owner'] },
+  { to: '/staff',          label: 'Staff',          icon: UserCog,      roles: ['gym_owner'] },
+  { to: '/inventory',      label: 'Inventory',      icon: Package,      roles: ['gym_owner'] },
+  { to: '/announcements',  label: 'Announcements',  icon: Megaphone,    roles: ['gym_owner'] },
+  { to: '/reports',        label: 'Reports',        icon: BarChart3,    roles: ['gym_owner'] },
+  { to: '/settings',       label: 'Settings',       icon: Settings,     roles: ['gym_owner'] },
 ];
 
 export default function Sidebar() {
@@ -42,8 +45,12 @@ export default function Sidebar() {
     <aside className="w-64 flex-shrink-0 h-full flex flex-col glass border-r border-white/5 p-4">
       {/* Logo + close (mobile only) */}
       <div className="flex items-center gap-3 px-2 py-4 mb-4">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center glow-purple flex-shrink-0">
-          <Dumbbell className="w-5 h-5 text-white" />
+        <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center glow-purple flex-shrink-0">
+          {user?.gym?.logo_url ? (
+            <img src={user.gym.logo_url} alt="logo" className="w-full h-full object-contain p-0.5" />
+          ) : (
+            <Dumbbell className="w-5 h-5 text-white" />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-white font-bold text-base truncate">{user?.gym?.name || 'GymPro'}</h1>

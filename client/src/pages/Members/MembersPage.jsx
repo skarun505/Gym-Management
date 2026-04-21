@@ -377,6 +377,16 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
           }
         }
         toast.success('Member added!');
+
+        // 🔔 Fire welcome email (non-blocking, silent fail)
+        if (data.email) {
+          const { data: { session } } = await supabase.auth.getSession();
+          fetch('https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/send-reminders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+            body: JSON.stringify({ welcome: true, member_id: memberId }),
+          }).catch(() => {}); // silent fail — email is bonus
+        }
       }
       onSave();
     } catch (err) {

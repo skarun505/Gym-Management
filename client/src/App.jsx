@@ -23,6 +23,8 @@ import StaffPage from './pages/Staff/StaffPage';
 import InventoryPage from './pages/Inventory/InventoryPage';
 import ReportsPage from './pages/Reports/ReportsPage';
 import GymSettingsPage from './pages/Settings/GymSettingsPage';
+import RevenuePage from './pages/Revenue/RevenuePage';
+import AnnouncementsPage from './pages/Announcements/AnnouncementsPage';
 
 // Super Admin Portal
 import SuperDashboardPage from './pages/SuperAdmin/SuperDashboardPage';
@@ -41,11 +43,12 @@ import AchievementsPage from './pages/Member/AchievementsPage';
 import MemberProfilePage from './pages/Member/MemberProfilePage';
 
 export default function App() {
-  const { restoreSession } = useAuthStore();
+  const { restoreSession, listenToAuthChanges } = useAuthStore();
 
-  // Restore Supabase session on app load
+  // Restore Supabase session on app load and keep listening for auth changes
   useEffect(() => {
     restoreSession();
+    listenToAuthChanges();
   }, []);
 
   return (
@@ -111,6 +114,22 @@ export default function App() {
             element={
               <PrivateRoute roles={['gym_owner']}>
                 <InventoryPage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="revenue"
+            element={
+              <PrivateRoute roles={['gym_owner']}>
+                <RevenuePage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="announcements"
+            element={
+              <PrivateRoute roles={['gym_owner']}>
+                <AnnouncementsPage />
               </PrivateRoute>
             }
           />

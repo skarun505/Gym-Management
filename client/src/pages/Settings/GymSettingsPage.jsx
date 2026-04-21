@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   Settings, Building2, Palette, CreditCard, AlertTriangle,
-  Save, CheckCircle, Upload, RefreshCw, Trash2, Plus, X
+  Save, CheckCircle, Upload, RefreshCw, Trash2, Plus, X, Camera, Loader2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
@@ -44,15 +44,49 @@ function GymProfileTab({ gym, onUpdated }) {
   });
   useEffect(() => { reset(gym); }, [gym]);
 
+  // Logo upload
+  const [logoPreview, setLogoPreview]       = useState(gym?.logo_url || null);
+  const [logoUploading, setLogoUploading]   = useState(false);
+  const logoInputRef = useRef(null);
+
+  const handleLogoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoPreview(URL.createObjectURL(file));
+    setLogoUploading(true);
+    try {
+      const ext  = file.name.split('.').pop();
+      const path = `${gym.id}/logo.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('gym-logos')
+        .upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: { publicUrl } } = supabase.storage.from('gym-logos').getPublicUrl(path);
+      const { error: dbErr } = await supabase.from('gyms').update({ logo_url: publicUrl }).eq('id', gym.id);
+      if (dbErr) throw dbErr;
+      setLogoPreview(publicUrl);
+      onUpdated({ ...gym, logo_url: publicUrl });
+      toast.success('Logo updated!');
+    } catch (err) {
+      toast.error('Logo upload failed: ' + err.message);
+      setLogoPreview(gym?.logo_url || null);
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
   const onSubmit = async (data) => {
     try {
       const { error } = await supabase
         .from('gyms')
         .update({
-          name:        data.name,
-          owner_name:  data.owner_name,
-          phone:       data.phone,
-          address:     data.address,
+          name:             data.name,
+          owner_name:       data.owner_name,
+          phone:            data.phone,
+          address:          data.address,
+          website:          data.website || null,
+          instagram:        data.instagram || null,
+          established_year: data.established_year ? Number(data.established_year) : null,
         })
         .eq('id', gym.id);
       if (error) throw error;
@@ -65,6 +99,37 @@ function GymProfileTab({ gym, onUpdated }) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 max-w-lg">
+      {/* Logo upload */}
+      <div>
+        <label className="label">Gym Logo</label>
+        <div className="flex items-center gap-5 mt-1">
+          <div
+            onClick={() => logoInputRef.current?.click()}
+            className="w-20 h-20 rounded-2xl overflow-hidden bg-dark-700 border-2 border-dashed border-white/20 hover:border-primary-500/60 flex items-center justify-center cursor-pointer group transition-all relative"
+          >
+            {logoPreview ? (
+              <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-1" />
+            ) : (
+              <Camera className="w-7 h-7 text-gray-600 group-hover:text-primary-400 transition-colors" />
+            )}
+            {logoUploading && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 text-white animate-spin" />
+              </div>
+            )}
+          </div>
+          <div>
+            <button type="button" onClick={() => logoInputRef.current?.click()}
+              className="btn-secondary text-sm flex items-center gap-2">
+              <Upload className="w-3.5 h-3.5" /> Upload Logo
+            </button>
+            <p className="text-gray-600 text-xs mt-1.5">PNG, JPG, WebP · Max 2 MB</p>
+            <p className="text-gray-600 text-xs">Shown in sidebar, reports & member portal</p>
+          </div>
+          <input ref={logoInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoChange} />
+        </div>
+      </div>
+
       <div>
         <label className="label">Gym Name *</label>
         <input {...register('name', { required: true })} className="input-field" placeholder="Power Fitness Club" />
@@ -80,6 +145,20 @@ function GymProfileTab({ gym, onUpdated }) {
       <div>
         <label className="label">Address</label>
         <textarea {...register('address')} className="input-field" rows={3} placeholder="123 Main Street, Mumbai" />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="label">Website</label>
+          <input {...register('website')} className="input-field" placeholder="https://" />
+        </div>
+        <div>
+          <label className="label">Instagram</label>
+          <input {...register('instagram')} className="input-field" placeholder="@gymname" />
+        </div>
+      </div>
+      <div>
+        <label className="label">Established Year</label>
+        <input {...register('established_year')} type="number" className="input-field" placeholder="2018" />
       </div>
       <div className="pt-2">
         <button
@@ -246,7 +325,7 @@ function PlansTab({ gymId }) {
     fetchPlans();
   };
 
-  const DURATION_LABEL = { monthly: '/ month', quarterly: '/ 3 months', yearly: '/ year' };
+  const DURATION_LABEL = { monthly: '/ month', quarterly: '/ 3 months', half_yearly: '/ 6 months', yearly: '/ year' };
 
   return (
     <div className="space-y-4">
@@ -298,6 +377,7 @@ function PlansTab({ gymId }) {
                 <select {...register('duration', { required: true })} className="input-field">
                   <option value="monthly">Monthly</option>
                   <option value="quarterly">Quarterly (3 months)</option>
+                  <option value="half_yearly">Half Yearly (6 months)</option>
                   <option value="yearly">Yearly</option>
                 </select>
               </div>

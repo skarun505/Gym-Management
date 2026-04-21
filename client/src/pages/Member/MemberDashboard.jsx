@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Zap, Calendar, CheckCircle, ChevronRight, Dumbbell, X } from 'lucide-react';
+import { Zap, Calendar, CheckCircle, ChevronRight, Dumbbell, X, Megaphone } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
@@ -161,6 +161,10 @@ export default function MemberDashboard() {
   const [checkingIn,    setCheckingIn]    = useState(false);
   const [celebration,   setCelebration]   = useState(null); // { streak, achievements[] }
   const [loading,       setLoading]       = useState(true);
+  const [announcements, setAnnouncements] = useState([]);
+  const [dismissedAnns, setDismissedAnns] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('dismissed_anns') || '[]'); } catch { return []; }
+  });
 
   const today    = new Date().toISOString().split('T')[0];
   const hour     = new Date().getHours();
@@ -182,7 +186,7 @@ export default function MemberDashboard() {
 
       const memberId = m.id;
 
-      const [streakRes, subRes, attendRes, planRes] = await Promise.all([
+      const [streakRes, subRes, attendRes, planRes, annRes] = await Promise.all([
         supabase.from('member_streaks').select('*').eq('member_id', memberId).maybeSingle(),
         supabase.from('member_subscriptions')
           .select('*, subscription_plans(plan_name, duration)')
@@ -193,7 +197,16 @@ export default function MemberDashboard() {
         supabase.from('member_workout_plans')
           .select('*, workout_plans(id, name, description, workout_exercises(*))')
           .eq('member_id', memberId).eq('is_active', true).maybeSingle(),
+        supabase.from('gym_announcements')
+          .select('*')
+          .eq('gym_id', m.gym_id)
+          .eq('is_active', true)
+          .or(`expires_at.is.null,expires_at.gte.${today}`)
+          .order('created_at', { ascending: false })
+          .limit(5),
       ]);
+
+      setAnnouncements(annRes.data || []);
 
       setStreak(streakRes.data);
       setSub(subRes.data);
@@ -296,6 +309,40 @@ export default function MemberDashboard() {
   return (
     <>
       <div className="space-y-0">
+      {/* ── Announcements Banner ──────────────────── */}
+        {announcements.filter(a => !dismissedAnns.includes(a.id)).length > 0 && (
+          <div className="px-5 pb-3 space-y-2">
+            {announcements.filter(a => !dismissedAnns.includes(a.id)).map(ann => {
+              const priorityColors = {
+                urgent: 'bg-red-500/10 border-red-500/30 text-red-300',
+                high:   'bg-amber-500/10 border-amber-500/30 text-amber-300',
+                normal: 'bg-blue-500/10 border-blue-500/30 text-blue-300',
+                low:    'bg-gray-500/10 border-gray-500/20 text-gray-400',
+              };
+              const cls = priorityColors[ann.priority] || priorityColors.normal;
+              return (
+                <div key={ann.id} className={`flex items-start gap-3 p-3 rounded-2xl border ${cls} relative`}>
+                  <span className="text-xl flex-shrink-0">{ann.emoji || '📢'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white">{ann.title}</p>
+                    <p className="text-xs mt-0.5 opacity-80">{ann.body}</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const updated = [...dismissedAnns, ann.id];
+                      setDismissedAnns(updated);
+                      localStorage.setItem('dismissed_anns', JSON.stringify(updated));
+                    }}
+                    className="p-1 rounded-full hover:bg-white/10 flex-shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* ── Greeting + Streak Ring ─────────────────── */}
         <div className="px-5 pt-6 pb-4 space-y-4">
           <div className="flex items-start justify-between">
