@@ -40,7 +40,7 @@ const useAuthStore = create((set, get) => ({
       };
 
       localStorage.setItem('gym_user', JSON.stringify(user));
-      set({ user, session: data.session, isLoading: false });
+      set({ user, session: data.session, isLoading: false, initialized: true });
       return { success: true, role: user.role };
     } catch (err) {
       const message = err.message || 'Login failed';
@@ -105,6 +105,9 @@ const useAuthStore = create((set, get) => ({
         return;
       }
       if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
+        // If login() already hydrated the user, skip re-fetching to avoid race condition
+        if (event === 'SIGNED_IN' && get().user) return;
+
         // Re-hydrate profile so user object stays fresh after token refresh
         const { data: profile } = await supabase
           .from('profiles')
@@ -125,7 +128,7 @@ const useAuthStore = create((set, get) => ({
             gym: profile.gyms || null,
           };
           localStorage.setItem('gym_user', JSON.stringify(user));
-          set({ user, session });
+          set({ user, session, initialized: true });
         }
       }
     });
