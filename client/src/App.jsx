@@ -33,9 +33,10 @@ const SuperMembersPage   = lazy(() => import('./pages/SuperAdmin/SuperMembersPag
 const SuperStaffPage     = lazy(() => import('./pages/SuperAdmin/SuperStaffPage'));
 
 // ── Staff Portal — lazy loaded ────────────────────────────────────────────
-const StaffDashboard     = lazy(() => import('./pages/Staff/StaffDashboard'));
-const StaffMembersPage   = lazy(() => import('./pages/Staff/StaffMembersPage'));
+const StaffDashboard      = lazy(() => import('./pages/Staff/StaffDashboard'));
+const StaffMembersPage    = lazy(() => import('./pages/Staff/StaffMembersPage'));
 const StaffAttendancePage = lazy(() => import('./pages/Staff/StaffAttendancePage'));
+const StaffProfilePage    = lazy(() => import('./pages/Staff/StaffProfilePage'));
 
 // ── Member Portal — lazy loaded ───────────────────────────────────────────
 const MemberDashboard    = lazy(() => import('./pages/Member/MemberDashboard'));
@@ -169,6 +170,7 @@ export default function App() {
             <Route path="dashboard"  element={<StaffDashboard />} />
             <Route path="members"    element={<StaffMembersPage />} />
             <Route path="attendance" element={<StaffAttendancePage />} />
+            <Route path="profile"    element={<StaffProfilePage />} />
           </Route>
         </Routes>
       </Suspense>
