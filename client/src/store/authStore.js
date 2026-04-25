@@ -24,15 +24,31 @@ function applyTheme(profile) {
   document.documentElement.style.setProperty('--color-brand', color);
 }
 
-// ── Fetch profile + gym in one query ─────────────────────────────
+// ── Fetch profile + gym as two separate queries (avoids PostgREST embedding errors) ──
 async function fetchProfile(userId) {
-  const { data, error } = await supabase
+  // Step 1: fetch profile row (no embedded join — avoids "cannot coerce" error)
+  const { data: profile, error: profileErr } = await supabase
     .from('profiles')
-    .select('*, gyms(id, name, theme_color, logo_url, gym_code, owner_name, phone, address, plan, status)')
+    .select('id, full_name, role, sub_role, photo_url, gym_id, status')
     .eq('id', userId)
-    .single();
-  if (error) throw error;
-  return data;
+    .maybeSingle();
+
+  if (profileErr) throw profileErr;
+  if (!profile) throw new Error('Profile not found. Please contact your admin.');
+
+  // Step 2: fetch gym separately if gym_id exists
+  let gym = null;
+  if (profile.gym_id) {
+    const { data: gymData } = await supabase
+      .from('gyms')
+      .select('id, name, theme_color, logo_url, gym_code, owner_name, phone, address, plan, status')
+      .eq('id', profile.gym_id)
+      .maybeSingle();
+    gym = gymData || null;
+  }
+
+  // Return in same shape as the old embedded query so buildUser() works unchanged
+  return { ...profile, gyms: gym };
 }
 
 const useAuthStore = create((set, get) => ({
