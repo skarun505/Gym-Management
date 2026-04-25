@@ -1,23 +1,26 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Dumbbell, Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import { Dumbbell, Eye, EyeOff, Lock, Mail, Phone } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 
 export default function LoginPage() {
-  const [email,    setEmail]    = useState('');
-  const [password, setPassword] = useState('');
-  const [showPass, setShowPass] = useState(false);
+  const [identifier, setIdentifier] = useState('');
+  const [password,   setPassword]   = useState('');
+  const [showPass,   setShowPass]   = useState(false);
   const { login, isLoading, error } = useAuthStore();
   const navigate = useNavigate();
 
+  // Detect whether user is typing a phone number or email
+  const isPhone = identifier.trim() !== '' && !identifier.includes('@');
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const result = await login(email, password);
+    const result = await login(identifier, password);
     if (result.success) {
       const routes = {
         super_admin: '/super-admin',
         gym_owner:   '/',
-        staff:       '/',
+        staff:       '/staff/dashboard',
         member:      '/member/dashboard',
       };
       navigate(routes[result.role] || '/');
@@ -54,16 +57,19 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="label">Email Address</label>
+              <label className="label">Email or Mobile Number</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                {isPhone
+                  ? <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                  : <Mail  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                }
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="text"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   className="input-field pl-10"
-                  placeholder="Enter your email"
-                  autoComplete="email"
+                  placeholder="Email or mobile number"
+                  autoComplete="username"
                   required
                 />
               </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Dumbbell, ChevronDown, ChevronUp, Play, Plus, X, CheckCircle } from 'lucide-react';
+import { Dumbbell, ChevronDown, ChevronUp, Play, X, CheckCircle, MessageSquare } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
@@ -144,9 +144,10 @@ export default function WorkoutSchedulePage() {
   const [plan, setPlan]             = useState(null);
   const [days, setDays]             = useState([]);
   const [activeDay, setActiveDay]   = useState(1);
-  const [todayLogs, setTodayLogs]   = useState([]);
-  const [logModal, setLogModal]     = useState(null);
-  const [loading, setLoading]       = useState(true);
+  const [todayLogs,    setTodayLogs]   = useState([]);
+  const [logModal,     setLogModal]     = useState(null);
+  const [trainerNotes, setTrainerNotes] = useState([]);
+  const [loading,      setLoading]      = useState(true);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -160,17 +161,17 @@ export default function WorkoutSchedulePage() {
         if (!m) { setLoading(false); return; }
         setMember(m);
 
-        const [planRes, logsRes] = await Promise.all([
+        const [planRes, logsRes, notesRes] = await Promise.all([
           supabase.from('member_workout_plans')
             .select('*, workout_plans(*, workout_exercises(*))')
+            .eq('member_id', m.id).eq('is_active', true).maybeSingle(),
+          supabase.from('workout_logs').select('exercise')
+            .eq('member_id', m.id).eq('logged_date', today),
+          supabase.from('trainer_notes').select('*')
             .eq('member_id', m.id)
-            .eq('is_active', true)
-            .maybeSingle(),
-          supabase.from('workout_logs')
-            .select('exercise')
-            .eq('member_id', m.id)
-            .eq('logged_date', today),
+            .order('created_at', { ascending: false }).limit(5),
         ]);
+        setTrainerNotes(notesRes.data || []);
 
         if (planRes.data?.workout_plans) {
           const wp = planRes.data.workout_plans;
@@ -216,6 +217,33 @@ export default function WorkoutSchedulePage() {
 
   return (
     <div className="space-y-0">
+      {/* Trainer Notes */}
+      {trainerNotes.length > 0 && (
+        <div className="px-5 pt-5 pb-2 space-y-2">
+          <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+            <MessageSquare className="w-3.5 h-3.5" /> Notes from your Trainer
+          </p>
+          {trainerNotes.map(n => {
+            const colors = {
+              workout:    'border-primary-500/30 bg-primary-500/5 text-primary-300',
+              nutrition:  'border-emerald-500/30 bg-emerald-500/5 text-emerald-300',
+              motivation: 'border-amber-500/30 bg-amber-500/5 text-amber-300',
+              general:    'border-blue-500/30 bg-blue-500/5 text-blue-300',
+            };
+            const cls = colors[n.note_type] || colors.general;
+            return (
+              <div key={n.id} className={`rounded-xl border p-3 ${cls}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold capitalize opacity-70">{n.note_type}</span>
+                  <span className="text-gray-600 text-xs">{n.note_date}</span>
+                </div>
+                <p className="text-sm leading-relaxed">{n.note}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Header */}
       <div className="px-5 pt-6 pb-4">
         <h1 className="text-2xl font-black text-white">{plan.name}</h1>

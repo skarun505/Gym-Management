@@ -3,87 +3,104 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Clock, CreditCard,
   UserCog, Package, BarChart3, LogOut, Dumbbell, Settings, Menu, X,
-  IndianRupee, Megaphone,
+  IndianRupee, Megaphone, ChevronRight, Search,
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
+import GlobalSearch from '../GlobalSearch';
 
-const navItems = [
-  { to: '/',               label: 'Dashboard',      icon: LayoutDashboard },
-  { to: '/members',        label: 'Members',        icon: Users },
-  { to: '/attendance',     label: 'Attendance',     icon: Clock },
-  { to: '/subscriptions',  label: 'Subscriptions',  icon: CreditCard },
-  { to: '/revenue',        label: 'Revenue',        icon: IndianRupee,  roles: ['gym_owner'] },
-  { to: '/staff',          label: 'Staff',          icon: UserCog,      roles: ['gym_owner'] },
-  { to: '/inventory',      label: 'Inventory',      icon: Package,      roles: ['gym_owner'] },
-  { to: '/announcements',  label: 'Announcements',  icon: Megaphone,    roles: ['gym_owner'] },
-  { to: '/reports',        label: 'Reports',        icon: BarChart3,    roles: ['gym_owner'] },
-  { to: '/settings',       label: 'Settings',       icon: Settings,     roles: ['gym_owner'] },
+
+const allNavItems = [
+  { to: '/',               label: 'Dashboard',     icon: LayoutDashboard },
+  { to: '/members',        label: 'Members',       icon: Users },
+  { to: '/attendance',     label: 'Attendance',    icon: Clock },
+  { to: '/subscriptions',  label: 'Subscriptions', icon: CreditCard },
+  { to: '/revenue',        label: 'Revenue',       icon: IndianRupee,   roles: ['gym_owner'] },
+  { to: '/staff',          label: 'Staff',         icon: UserCog,       roles: ['gym_owner'] },
+  { to: '/inventory',      label: 'Inventory',     icon: Package,       roles: ['gym_owner'] },
+  { to: '/announcements',  label: 'Announcements', icon: Megaphone,     roles: ['gym_owner'] },
+  { to: '/reports',        label: 'Reports',       icon: BarChart3,     roles: ['gym_owner'] },
+  { to: '/settings',       label: 'Settings',      icon: Settings,      roles: ['gym_owner'] },
 ];
+
+// Items shown in mobile bottom nav (most used 5)
+const mobileBottomItems = ['/', '/members', '/attendance', '/subscriptions', '/staff'];
 
 export default function Sidebar() {
   const { user, logout } = useAuthStore();
   const navigate  = useNavigate();
   const location  = useLocation();
-  const [open, setOpen] = useState(false);
+  const [drawerOpen,  setDrawerOpen]  = useState(false);
+  const [showSearch,  setShowSearch]  = useState(false);
 
-  // Close drawer on route change
-  useEffect(() => { setOpen(false); }, [location.pathname]);
-
-  // Prevent body scroll when drawer is open
+  useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
   useEffect(() => {
-    document.body.style.overflow = open ? 'hidden' : '';
+    document.body.style.overflow = drawerOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [open]);
+  }, [drawerOpen]);
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
-  const visibleItems = navItems.filter(item =>
+  const visibleItems = allNavItems.filter(item =>
     !item.roles || item.roles.includes(user?.role)
   );
 
-  const SidebarContent = () => (
-    <aside className="w-64 flex-shrink-0 h-full flex flex-col glass border-r border-white/5 p-4">
-      {/* Logo + close (mobile only) */}
+  const themeColor = user?.gym?.theme_color || '#a21cce';
+
+
+  // ── Desktop Sidebar ─────────────────────────────────────────
+  const SidebarContent = ({ onClose }) => (
+    <aside className="w-64 h-full flex flex-col border-r border-white/5 p-4"
+      style={{ background: 'rgba(10,10,20,0.97)' }}>
+      {/* Logo + close */}
       <div className="flex items-center gap-3 px-2 py-4 mb-4">
-        <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center glow-purple flex-shrink-0">
-          {user?.gym?.logo_url ? (
-            <img src={user.gym.logo_url} alt="logo" className="w-full h-full object-contain p-0.5" />
-          ) : (
-            <Dumbbell className="w-5 h-5 text-white" />
-          )}
+        <div
+          className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center shadow-lg flex-shrink-0"
+          style={{ background: `linear-gradient(135deg, ${themeColor}, ${themeColor}88)` }}
+        >
+          {user?.gym?.logo_url
+            ? <img src={user.gym.logo_url} alt="logo" className="w-full h-full object-contain p-0.5" />
+            : <Dumbbell className="w-5 h-5 text-white" />}
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-white font-bold text-base truncate">{user?.gym?.name || 'GymPro'}</h1>
-          <p className="text-xs text-gray-500">Management System</p>
+          <p className="text-xs text-gray-500 capitalize">{user?.role?.replace('_', ' ')}</p>
         </div>
-        {/* Close button — mobile only */}
-        <button
-          onClick={() => setOpen(false)}
-          className="lg:hidden p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {onClose && (
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0">
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
-      {/* Nav Links */}
+      {/* Search trigger */}
+      <button onClick={() => setShowSearch(true)}
+        className="flex items-center gap-2.5 w-full px-3 py-2 mb-3 rounded-xl bg-dark-700/60 border border-white/5 text-gray-500 hover:text-gray-300 hover:border-white/10 transition-all text-sm">
+        <Search className="w-4 h-4" />
+        <span className="flex-1 text-left">Search…</span>
+        <kbd className="text-[10px] bg-dark-600 px-1.5 py-0.5 rounded text-gray-600">⌘K</kbd>
+      </button>
+
+      {/* Nav */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto">
         {visibleItems.map(({ to, label, icon: Icon }) => (
           <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+            key={to} to={to} end={to === '/'}
+            className={({ isActive }) =>
+              `sidebar-link ${isActive ? 'active' : ''}`
+            }
           >
             <Icon className="w-4 h-4 flex-shrink-0" />
-            {label}
+            <span className="flex-1">{label}</span>
+            <ChevronRight className="w-3.5 h-3.5 opacity-30 flex-shrink-0" />
           </NavLink>
         ))}
       </nav>
 
-      {/* User Profile + Logout */}
+      {/* User + logout */}
       <div className="mt-4 pt-4 border-t border-white/5">
         <div className="flex items-center gap-3 px-2 py-3 mb-1">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+            style={{ background: `linear-gradient(135deg, ${themeColor}, ${themeColor}88)` }}>
             {user?.name?.charAt(0) || 'A'}
           </div>
           <div className="flex-1 min-w-0">
@@ -91,45 +108,72 @@ export default function Sidebar() {
             <p className="text-xs text-gray-500 capitalize">{user?.role?.replace('_', ' ')}</p>
           </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="sidebar-link w-full text-red-400 hover:text-red-300 hover:bg-red-500/10"
-        >
-          <LogOut className="w-4 h-4" />
-          Logout
+        <button onClick={handleLogout}
+          className="sidebar-link w-full text-red-400 hover:text-red-300 hover:bg-red-500/10">
+          <LogOut className="w-4 h-4" /> Logout
         </button>
       </div>
     </aside>
   );
 
+  const bottomItems = visibleItems.filter(it => mobileBottomItems.includes(it.to));
+
   return (
     <>
-      {/* ── Desktop sidebar (always visible ≥ lg) ───────────── */}
+      {/* ── Desktop sidebar ────────────────────────────────── */}
       <div className="hidden lg:flex h-screen sticky top-0 flex-shrink-0">
         <SidebarContent />
       </div>
 
-      {/* ── Mobile hamburger button ─────────────────────────── */}
-      <button
-        onClick={() => setOpen(true)}
-        className="lg:hidden fixed top-3 left-3 z-40 w-10 h-10 rounded-xl bg-dark-700 border border-white/10 flex items-center justify-center text-gray-300 hover:text-white shadow-lg transition-colors"
-        aria-label="Open menu"
-      >
-        <Menu className="w-5 h-5" />
-      </button>
+      {/* ── Mobile bottom nav ─────────────────────────────── */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-white/5"
+        style={{ background: 'rgba(10,10,20,0.97)', backdropFilter: 'blur(16px)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="flex items-stretch max-w-lg mx-auto">
+          {bottomItems.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to} to={to} end={to === '/'}
+              className={({ isActive }) =>
+                `flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-semibold transition-all ${
+                  isActive ? 'text-primary-400' : 'text-gray-500 hover:text-gray-300'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${isActive ? 'bg-primary-600/25' : ''}`}>
+                    <Icon className={`w-5 h-5 transition-all ${isActive ? 'text-primary-400' : 'text-gray-500'}`} strokeWidth={isActive ? 2.5 : 1.8} />
+                  </div>
+                  <span>{label}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
 
-      {/* ── Mobile drawer overlay ───────────────────────────── */}
-      {open && (
+          {/* "More" button opens full drawer */}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-semibold transition-all ${drawerOpen ? 'text-primary-400' : 'text-gray-500'}`}>
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center">
+              <Menu className="w-5 h-5" strokeWidth={1.8} />
+            </div>
+            <span>More</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* ── Mobile full drawer ─────────────────────────────── */}
+      {drawerOpen && (
         <>
-          <div
-            className="sidebar-overlay lg:hidden animate-fade-in"
-            onClick={() => setOpen(false)}
-          />
-          <div className="lg:hidden fixed top-0 left-0 h-full z-40 animate-slide-in-right w-72 shadow-2xl">
-            <SidebarContent />
+          <div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 animate-fade-in"
+            onClick={() => setDrawerOpen(false)} />
+          <div className="lg:hidden fixed top-0 left-0 h-full z-50 w-72 shadow-2xl animate-slide-in-right">
+            <SidebarContent onClose={() => setDrawerOpen(false)} />
           </div>
         </>
       )}
+
+      {/* Global Search Modal */}
+      {showSearch && <GlobalSearch onClose={() => setShowSearch(false)} />}
     </>
   );
 }

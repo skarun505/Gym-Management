@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Zap, Calendar, CheckCircle, ChevronRight, Dumbbell, X, Megaphone } from 'lucide-react';
+import { Zap, Calendar, CheckCircle, ChevronRight, Dumbbell, X, Trophy, Star, Flame, BarChart3, Apple, UserCheck, TrendingUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
@@ -162,6 +162,9 @@ export default function MemberDashboard() {
   const [celebration,   setCelebration]   = useState(null); // { streak, achievements[] }
   const [loading,       setLoading]       = useState(true);
   const [announcements, setAnnouncements] = useState([]);
+  const [badges,        setBadges]        = useState([]);
+  const [trainer,       setTrainer]       = useState(null);
+  const [weekGoals,     setWeekGoals]     = useState({ workouts: 0, nutrition: 0, water: 0 });
   const [dismissedAnns, setDismissedAnns] = useState(() => {
     try { return JSON.parse(localStorage.getItem('dismissed_anns') || '[]'); } catch { return []; }
   });
@@ -186,7 +189,7 @@ export default function MemberDashboard() {
 
       const memberId = m.id;
 
-      const [streakRes, subRes, attendRes, planRes, annRes] = await Promise.all([
+      const [streakRes, subRes, attendRes, planRes, annRes, badgeRes, trainerRes, nutritionRes] = await Promise.all([
         supabase.from('member_streaks').select('*').eq('member_id', memberId).maybeSingle(),
         supabase.from('member_subscriptions')
           .select('*, subscription_plans(plan_name, duration)')
@@ -204,15 +207,44 @@ export default function MemberDashboard() {
           .or(`expires_at.is.null,expires_at.gte.${today}`)
           .order('created_at', { ascending: false })
           .limit(5),
+        // Earned badges
+        supabase.from('member_achievements')
+          .select('earned_at, achievements(code, title, icon, description)')
+          .eq('member_id', memberId)
+          .order('earned_at', { ascending: false }),
+        // Trainer assignment
+        supabase.from('trainer_assignments')
+          .select('*, staff(full_name, role, photo_url, phone)')
+          .eq('member_id', memberId)
+          .eq('is_active', true)
+          .maybeSingle(),
+        // This week's nutrition logs
+        supabase.from('nutrition_logs')
+          .select('log_date, calories, water_glasses')
+          .eq('member_id', memberId)
+          .gte('log_date', last7[0]),
       ]);
 
       setAnnouncements(annRes.data || []);
+      setBadges((badgeRes.data || []).filter(b => b.achievements).map(b => ({
+        ...b.achievements,
+        earned_at: b.earned_at,
+      })));
+      setTrainer(trainerRes.data?.staff || null);
 
       setStreak(streakRes.data);
       setSub(subRes.data);
       const days = (attendRes.data || []).map(a => a.created_at);
       setWeekDays(days);
       setCheckedToday(days.includes(today));
+
+      // Weekly goals from nutrition logs
+      const nutLogs = nutritionRes?.data || [];
+      setWeekGoals({
+        workouts:  days.length,
+        nutrition: nutLogs.filter(l => l.calories && l.calories > 0).length,
+        water:     nutLogs.reduce((s, l) => s + (l.water_glasses || 0), 0),
+      });
 
       if (planRes.data?.workout_plans) {
         const joinedDate = planRes.data.assigned_on || today;
@@ -268,6 +300,7 @@ export default function MemberDashboard() {
         longest_streak: data.longestStreak,
         total_checkins: data.totalCheckins,
         last_checkin:   today,
+        diet_unlocked:  data.dietUnlocked,
       }));
 
       // Show celebration modal
@@ -400,16 +433,64 @@ export default function MemberDashboard() {
         {/* ── Stats Row ────────────────────────────── */}
         <div className="px-5 pb-4 grid grid-cols-3 gap-3">
           {[
-            { label: 'Total Visits', value: streak?.total_checkins || 0, icon: '📊', color: 'text-primary-400' },
-            { label: 'Day Streak',   value: streak?.current_streak || 0, icon: '🔥', color: 'text-orange-400' },
-            { label: 'Best Streak',  value: streak?.longest_streak || 0, icon: '🏆', color: 'text-amber-400' },
+            { label: 'Total Visits', value: streak?.total_checkins || 0, icon: <BarChart3 className="w-5 h-5" />, color: 'text-primary-400' },
+            { label: 'Day Streak',   value: streak?.current_streak || 0, icon: <Flame className="w-5 h-5" />,    color: 'text-orange-400' },
+            { label: 'Best Streak',  value: streak?.longest_streak || 0, icon: <Trophy className="w-5 h-5" />,   color: 'text-amber-400' },
           ].map(({ label, value, icon, color }) => (
             <div key={label} className="card p-3 text-center">
-              <span className="text-xl">{icon}</span>
+              <span className={color}>{icon}</span>
               <p className={`text-xl font-black mt-1 ${color}`}>{value}</p>
               <p className="text-[10px] text-gray-500 mt-0.5 font-medium">{label}</p>
             </div>
           ))}
+        </div>
+
+        {/* ── Weekly Goals ──────────────────────────── */}
+        <div className="px-5 pb-4">
+          <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-3">
+            This Week's Goals
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              {
+                label: 'Workouts', value: weekGoals.workouts, max: 5,
+                color: '#a21cce', icon: '🏋️',
+              },
+              {
+                label: 'Nutrition Logs', value: weekGoals.nutrition, max: 7,
+                color: '#10b981', icon: '🥗',
+              },
+              {
+                label: 'Glasses Water', value: weekGoals.water, max: 56, // 8/day × 7
+                color: '#3b82f6', icon: '💧',
+              },
+            ].map(({ label, value, max, color, icon }) => {
+              const pct  = Math.min((value / max) * 100, 100);
+              const r    = 24, circ = 2 * Math.PI * r;
+              const done = pct >= 100;
+              return (
+                <div key={label} className="card p-3 flex flex-col items-center gap-2">
+                  <div className="relative w-14 h-14">
+                    <svg className="w-full h-full -rotate-90" viewBox="0 0 56 56">
+                      <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="5" />
+                      <circle cx="28" cy="28" r={r} fill="none"
+                        stroke={done ? '#10b981' : color}
+                        strokeWidth="5" strokeLinecap="round"
+                        strokeDasharray={`${(pct / 100) * circ} ${circ}`}
+                        style={{ transition: 'stroke-dasharray 0.7s ease' }} />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center text-lg">
+                      {done ? '✅' : icon}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-white font-black text-sm leading-none">{value}<span className="text-gray-600 text-[10px]">/{max}</span></p>
+                    <p className="text-gray-500 text-[10px] mt-0.5 font-medium">{label}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* ── Subscription Status ──────────────────── */}
@@ -442,6 +523,92 @@ export default function MemberDashboard() {
             </div>
           </div>
         )}
+
+        {/* ── Personal Trainer Card ─────────────────── */}
+        {trainer && (
+          <div className="px-5 pb-4">
+            <h2 className="text-white font-bold mb-3 flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-primary-400" /> Your Personal Trainer
+            </h2>
+            <div className="card flex items-center gap-4">
+              {trainer.photo_url ? (
+                <img src={trainer.photo_url} alt={trainer.full_name} className="w-14 h-14 rounded-2xl object-cover flex-shrink-0" />
+              ) : (
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center text-white text-xl font-black flex-shrink-0">
+                  {trainer.full_name?.charAt(0)}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-bold">{trainer.full_name}</p>
+                <p className="text-primary-400 text-xs font-semibold capitalize mt-0.5">{trainer.role || 'Personal Trainer'}</p>
+                {trainer.phone && (
+                  <p className="text-gray-500 text-xs mt-1">{trainer.phone}</p>
+                )}
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+                <Star className="w-5 h-5 text-emerald-400" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Diet Chart Unlock Banner ──────────────── */}
+        <div className="px-5 pb-4">
+          <NavLink
+            to="/member/diet"
+            className={`card flex items-center gap-4 transition-all ${
+              streak?.diet_unlocked
+                ? 'border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10'
+                : 'border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10'
+            }`}
+          >
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+              streak?.diet_unlocked ? 'bg-emerald-500/20' : 'bg-amber-500/20'
+            }`}>
+              <Apple className={`w-6 h-6 ${streak?.diet_unlocked ? 'text-emerald-400' : 'text-amber-400'}`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-sm">
+                {streak?.diet_unlocked ? '🥗 Your Diet Chart' : '🔒 Diet Chart'}
+              </p>
+              <p className="text-xs mt-0.5">
+                {streak?.diet_unlocked
+                  ? <span className="text-emerald-400">Unlocked! Tap to view your meal plan →</span>
+                  : <span className="text-amber-400">Earn a 7-day streak to unlock · {streak?.current_streak || 0}/7 days</span>}
+              </p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          </NavLink>
+        </div>
+
+        {/* ── My Badges ────────────────────────────── */}
+        <div className="px-5 pb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-white font-bold flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-amber-400" /> My Badges
+            </h2>
+            <NavLink to="/member/achievements" className="text-primary-400 text-xs font-medium flex items-center gap-1">
+              View all <ChevronRight className="w-3 h-3" />
+            </NavLink>
+          </div>
+          {badges.length === 0 ? (
+            <div className="card text-center py-5">
+              <Trophy className="w-8 h-8 text-gray-700 mx-auto mb-2" />
+              <p className="text-gray-400 text-sm font-medium">No badges yet</p>
+              <p className="text-gray-600 text-xs mt-1">Start checking in to earn your first badge!</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {badges.slice(0, 6).map(b => (
+                <div key={b.code} className="card p-3 text-center space-y-1 hover:border-primary-500/30 transition-all">
+                  <span className="text-2xl">{b.icon}</span>
+                  <p className="text-white text-xs font-bold leading-tight">{b.title}</p>
+                  <p className="text-gray-600 text-[10px]">{new Date(b.earned_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* ── Workout Preview ──────────────────────── */}
         <div className="px-5 pb-4">
@@ -493,6 +660,30 @@ export default function MemberDashboard() {
               <p className="text-gray-600 text-xs mt-1">Ask your trainer to assign a plan</p>
             </div>
           )}
+        </div>
+
+        {/* ── Quick Actions ────────────────────────── */}
+        <div className="px-5 pb-6 grid grid-cols-2 gap-3">
+          <NavLink to="/member/nutrition"
+            className="card flex flex-col items-start gap-3 hover:border-emerald-500/30 transition-all group">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 flex items-center justify-center group-hover:bg-emerald-500/25 transition-colors">
+              <Apple className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm">Nutrition</p>
+              <p className="text-gray-500 text-xs mt-0.5">Log today's macros</p>
+            </div>
+          </NavLink>
+          <NavLink to="/member/progress"
+            className="card flex flex-col items-start gap-3 hover:border-primary-500/30 transition-all group">
+            <div className="w-10 h-10 rounded-2xl bg-primary-500/15 flex items-center justify-center group-hover:bg-primary-500/25 transition-colors">
+              <TrendingUp className="w-5 h-5 text-primary-400" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm">Progress</p>
+              <p className="text-gray-500 text-xs mt-0.5">Track measurements</p>
+            </div>
+          </NavLink>
         </div>
       </div>
 

@@ -1,14 +1,15 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { Home, Calendar, TrendingUp, Trophy, User } from 'lucide-react';
+import { Home, Calendar, Apple, Trophy, User } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 
 const navItems = [
-  { to: '/member/dashboard',    label: 'Home',     icon: Home },
-  { to: '/member/schedule',     label: 'Schedule', icon: Calendar },
-  { to: '/member/progress',     label: 'Progress', icon: TrendingUp },
-  { to: '/member/achievements', label: 'Wins',     icon: Trophy },
-  { to: '/member/profile',      label: 'Profile',  icon: User },
+  { to: '/member/dashboard',    label: 'Home',      icon: Home },
+  { to: '/member/schedule',     label: 'Workout',   icon: Calendar },
+  { to: '/member/nutrition',    label: 'Nutrition', icon: Apple },
+  { to: '/member/achievements', label: 'Badges',    icon: Trophy },
+  { to: '/member/profile',      label: 'Profile',   icon: User },
 ];
+
 
 export default function MemberLayout() {
   const { user } = useAuthStore();

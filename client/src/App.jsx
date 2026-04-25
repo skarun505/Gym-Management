@@ -34,6 +34,13 @@ import SuperStaffPage from './pages/SuperAdmin/SuperStaffPage';
 
 // Layouts
 import MemberLayout from './components/layout/MemberLayout';
+import StaffLayout from './components/layout/StaffLayout';
+
+// Staff Portal
+import StaffDashboard from './pages/Staff/StaffDashboard';
+import StaffMembersPage from './pages/Staff/StaffMembersPage';
+import StaffAttendancePage from './pages/Staff/StaffAttendancePage';
+
 
 // Member Portal
 import MemberDashboard from './pages/Member/MemberDashboard';
@@ -41,6 +48,8 @@ import WorkoutSchedulePage from './pages/Member/WorkoutSchedulePage';
 import ProgressPage from './pages/Member/ProgressPage';
 import AchievementsPage from './pages/Member/AchievementsPage';
 import MemberProfilePage from './pages/Member/MemberProfilePage';
+import DietChartPage from './pages/Member/DietChartPage';
+import NutritionPage from './pages/Member/NutritionPage';
 
 export default function App() {
   const { restoreSession, listenToAuthChanges } = useAuthStore();
@@ -88,11 +97,11 @@ export default function App() {
           <Route path="staff"   element={<SuperStaffPage />} />
         </Route>
 
-        {/* ── Gym Management Portal (gym_owner + staff) ── */}
+        {/* ── Gym Management Portal (gym_owner only) ── */}
         <Route
           path="/"
           element={
-            <PrivateRoute roles={['gym_owner', 'staff']}>
+            <PrivateRoute roles={['gym_owner']}>
               <AppLayout />
             </PrivateRoute>
           }
@@ -169,6 +178,24 @@ export default function App() {
           <Route path="progress"     element={<ProgressPage />} />
           <Route path="achievements" element={<AchievementsPage />} />
           <Route path="profile"      element={<MemberProfilePage />} />
+          <Route path="diet"         element={<DietChartPage />} />
+          <Route path="nutrition"    element={<NutritionPage />} />
+          <Route path="progress"     element={<ProgressPage />} />
+        </Route>
+
+        {/* ── Staff Portal ── */}
+        <Route
+          path="/staff"
+          element={
+            <PrivateRoute roles={['staff']}>
+              <StaffLayout />
+            </PrivateRoute>
+          }
+        >
+          <Route index element={<Navigate to="/staff/dashboard" replace />} />
+          <Route path="dashboard"  element={<StaffDashboard />} />
+          <Route path="members"    element={<StaffMembersPage />} />
+          <Route path="attendance" element={<StaffAttendancePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

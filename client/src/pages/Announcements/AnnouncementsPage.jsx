@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Megaphone, Plus, X, Trash2, AlertTriangle, Info, Zap, Bell, Edit2, Save } from 'lucide-react';
+import { Megaphone, Plus, X, Trash2, AlertTriangle, Info, Zap, Bell, Edit2, Save, Target, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
@@ -176,22 +176,106 @@ function AnnouncementModal({ ann, gymId, onClose, onSave }) {
   );
 }
 
+const CHALLENGE_EMOJIS = ['🏅','🏆','💪','🔥','🎯','⚡','🌟','🚀','🥇','🏋️','🧘','🤸'];
+
+function ChallengeModal({ gymId, onClose, onSave }) {
+  const today = new Date().toISOString().split('T')[0];
+  const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+  const [form, setForm] = useState({
+    title: '', description: '', badge_emoji: '🏅',
+    start_date: today, end_date: nextWeek,
+    target_type: 'checkin', target_count: 1,
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const save = async () => {
+    if (!form.title.trim() || !form.end_date) { toast.error('Title and end date required'); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('gym_challenges').insert({ ...form, gym_id: gymId, target_count: Number(form.target_count) });
+      if (error) throw error;
+      toast.success('Challenge created! 🎯');
+      onSave();
+    } catch (e) { toast.error(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content max-w-lg" onClick={e => e.stopPropagation()}>
+        <div className="p-6 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center">
+              <Target className="w-4 h-4 text-amber-400" />
+            </div>
+            <h2 className="text-white font-bold">New Challenge</h2>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="label">Badge</label>
+            <div className="flex gap-2 flex-wrap mt-1">
+              {CHALLENGE_EMOJIS.map(e => (
+                <button key={e} onClick={() => set('badge_emoji', e)}
+                  className={`w-10 h-10 rounded-xl text-lg transition-all ${
+                    form.badge_emoji === e ? 'bg-amber-500/30 ring-2 ring-amber-500' : 'bg-dark-700 hover:bg-dark-600'
+                  }`}>{e}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="label">Challenge Title *</label>
+            <input value={form.title} onChange={e => set('title', e.target.value)}
+              className="input-field" placeholder="7-Day Check-in Streak" maxLength={80} />
+          </div>
+          <div>
+            <label className="label">Description</label>
+            <textarea value={form.description} onChange={e => set('description', e.target.value)}
+              className="input-field" rows={2} placeholder="Check in every day for 7 days and earn a badge!" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Start Date</label>
+              <input type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} className="input-field" />
+            </div>
+            <div>
+              <label className="label">End Date *</label>
+              <input type="date" value={form.end_date} onChange={e => set('end_date', e.target.value)} className="input-field" />
+            </div>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+            <button onClick={save} disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50">
+              {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? 'Creating…' : 'Create Challenge'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AnnouncementsPage() {
   const { user } = useAuthStore();
   const [announcements, setAnnouncements] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
+  const [challenges,    setChallenges]    = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [showModal,     setShowModal]     = useState(false);
+  const [showChallenge, setShowChallenge] = useState(false);
+  const [editTarget,    setEditTarget]    = useState(null);
 
   const fetchAll = async () => {
     if (!user?.gym_id) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('gym_announcements')
-      .select('*')
-      .eq('gym_id', user.gym_id)
-      .order('created_at', { ascending: false });
-    if (!error) setAnnouncements(data || []);
+    const [{ data: annData }, { data: chData }] = await Promise.all([
+      supabase.from('gym_announcements').select('*').eq('gym_id', user.gym_id).order('created_at', { ascending: false }),
+      supabase.from('gym_challenges').select('*').eq('gym_id', user.gym_id).order('created_at', { ascending: false }),
+    ]);
+    setAnnouncements(annData || []);
+    setChallenges(chData || []);
     setLoading(false);
   };
 
@@ -354,6 +438,71 @@ export default function AnnouncementsPage() {
           gymId={user.gym_id}
           onClose={() => setEditTarget(null)}
           onSave={() => { setEditTarget(null); fetchAll(); }}
+        />
+      )}
+
+      {/* ── Challenges Section ── */}
+      <div className="border-t border-white/5 pt-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-white font-bold flex items-center gap-2">
+              <Target className="w-5 h-5 text-amber-400" /> Member Challenges
+            </h2>
+            <p className="text-gray-500 text-sm mt-0.5">Weekly / monthly goals for your members</p>
+          </div>
+          <button onClick={() => setShowChallenge(true)} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" /> New Challenge
+          </button>
+        </div>
+
+        {challenges.length === 0 ? (
+          <div className="card text-center py-8">
+            <Target className="w-10 h-10 text-gray-700 mx-auto mb-3" />
+            <p className="text-gray-400 text-sm">No challenges created yet</p>
+            <p className="text-gray-600 text-xs mt-1">Challenges appear in the member Wins → Challenges tab</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {challenges.map(ch => {
+              const isActive = ch.is_active && ch.end_date >= new Date().toISOString().split('T')[0];
+              return (
+                <div key={ch.id} className={`card flex items-start gap-3 ${
+                  isActive ? 'border-amber-500/20' : 'opacity-50'
+                }`}>
+                  <span className="text-2xl flex-shrink-0">{ch.badge_emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm">{ch.title}</p>
+                    {ch.description && <p className="text-gray-400 text-xs mt-0.5">{ch.description}</p>}
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-gray-600 text-xs flex items-center gap-1">
+                        <Calendar className="w-3 h-3" /> {ch.start_date} → {ch.end_date}
+                      </span>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                        isActive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-gray-500/15 text-gray-500'
+                      }`}>{isActive ? 'Active' : 'Ended'}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Delete challenge?')) return;
+                      await supabase.from('gym_challenges').delete().eq('id', ch.id);
+                      toast.success('Deleted'); fetchAll();
+                    }}
+                    className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {showChallenge && (
+        <ChallengeModal
+          gymId={user.gym_id}
+          onClose={() => setShowChallenge(false)}
+          onSave={() => { setShowChallenge(false); fetchAll(); }}
         />
       )}
     </div>

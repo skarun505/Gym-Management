@@ -1,327 +1,331 @@
-import { useEffect, useState } from 'react';
-import { TrendingUp, Scale, Activity, Award, Plus, X } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { useEffect, useState, useCallback } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line,
-} from 'recharts';
+  TrendingUp, TrendingDown, Minus, Scale, Ruler,
+  Plus, Save, ChevronLeft, ChevronRight, Check, Activity
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 
-const CustomTooltip = ({ active, payload, label, unit }) => {
-  if (active && payload?.length) {
-    return (
-      <div className="glass-strong rounded-xl px-3 py-2 text-xs">
-        <p className="text-gray-400">{label}</p>
-        <p className="text-primary-400 font-bold">{payload[0].value}{unit}</p>
-      </div>
-    );
-  }
-  return null;
-};
+const fmt = (d) => d.toISOString().split('T')[0];
 
-// ── Measurement Log Modal ─────────────────────────────────────
-function MeasurementModal({ memberId, gymId, onClose, onSaved }) {
-  const { register, handleSubmit, formState: { isSubmitting } } = useForm({
-    defaultValues: { logged_date: new Date().toISOString().split('T')[0] },
-  });
-
-  const onSubmit = async (data) => {
-    try {
-      const payload = {
-        gym_id:    gymId,
-        member_id: memberId,
-        logged_date: data.logged_date,
-      };
-      const fields = ['weight_kg', 'body_fat_pct', 'chest_cm', 'waist_cm', 'hip_cm', 'bicep_cm'];
-      fields.forEach(f => { if (data[f]) payload[f] = Number(data[f]); });
-      if (data.notes) payload.notes = data.notes;
-
-      const { error } = await supabase.from('member_measurements').insert(payload);
-      if (error) throw error;
-      toast.success('Measurements logged! 📏');
-      onSaved();
-      onClose();
-    } catch (err) {
-      toast.error(err.message || 'Failed');
-    }
-  };
+// ─── Mini Sparkline ───────────────────────────────────────────
+function Sparkline({ data, color = '#a21cce' }) {
+  if (data.length < 2) return null;
+  const vals = data.map(d => d.value).filter(Boolean);
+  if (!vals.length) return null;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const w = 80, h = 28;
+  const pts = data
+    .filter(d => d.value)
+    .map((d, i, arr) => {
+      const x = (i / (arr.length - 1)) * w;
+      const y = h - ((d.value - min) / range) * h;
+      return `${x},${y}`;
+    }).join(' ');
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
-        <div className="p-5 border-b border-white/5 flex items-center justify-between">
-          <div>
-            <h2 className="text-white font-bold">Log Measurements</h2>
-            <p className="text-gray-500 text-xs mt-0.5">Track your body progress</p>
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="opacity-70">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// ─── Stat Card ────────────────────────────────────────────────
+function StatCard({ label, current, first, unit, icon: Icon, color, sparkData }) {
+  const diff = current && first ? +(current - first).toFixed(1) : null;
+  const TrendIcon = diff === null ? Minus : diff < 0 ? TrendingDown : diff > 0 ? TrendingUp : Minus;
+  const trendColor = diff === null ? 'text-gray-600'
+    : label === 'Weight' || label === 'Waist' || label === 'Body Fat'
+      ? (diff < 0 ? 'text-emerald-400' : diff > 0 ? 'text-red-400' : 'text-gray-500')
+      : (diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-amber-400' : 'text-gray-500');
+
+  return (
+    <div className="card space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${color}20` }}>
+            <Icon className="w-3.5 h-3.5" style={{ color }} />
           </div>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+          <span className="text-gray-400 text-xs font-semibold">{label}</span>
         </div>
-        <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
-          <div>
-            <label className="label">Date</label>
-            <input {...register('logged_date')} type="date" className="input-field" />
+        {diff !== null && (
+          <div className={`flex items-center gap-0.5 text-xs font-bold ${trendColor}`}>
+            <TrendIcon className="w-3.5 h-3.5" />
+            {Math.abs(diff)}{unit}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Weight (kg)</label>
-              <input {...register('weight_kg')} type="number" step="0.1" className="input-field" placeholder="70.5" />
-            </div>
-            <div>
-              <label className="label">Body Fat %</label>
-              <input {...register('body_fat_pct')} type="number" step="0.1" className="input-field" placeholder="18.2" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Chest (cm)</label>
-              <input {...register('chest_cm')} type="number" step="0.5" className="input-field" />
-            </div>
-            <div>
-              <label className="label">Waist (cm)</label>
-              <input {...register('waist_cm')} type="number" step="0.5" className="input-field" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Hip (cm)</label>
-              <input {...register('hip_cm')} type="number" step="0.5" className="input-field" />
-            </div>
-            <div>
-              <label className="label">Bicep (cm)</label>
-              <input {...register('bicep_cm')} type="number" step="0.5" className="input-field" />
-            </div>
-          </div>
-          <div>
-            <label className="label">Notes</label>
-            <textarea {...register('notes')} className="input-field" rows={2} placeholder="How's progress feeling?" />
-          </div>
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button type="submit" disabled={isSubmitting} className="btn-primary flex-1">
-              {isSubmitting ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        </form>
+        )}
+      </div>
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="text-white font-black text-xl leading-none">
+            {current ?? '—'}
+            {current && <span className="text-gray-500 text-xs font-normal ml-0.5">{unit}</span>}
+          </p>
+          {first && first !== current && (
+            <p className="text-gray-600 text-[10px] mt-0.5">was {first}{unit}</p>
+          )}
+        </div>
+        <Sparkline data={sparkData} color={color} />
       </div>
     </div>
   );
 }
 
-// ── Personal Bests Table ──────────────────────────────────────
-function PersonalBests({ memberId }) {
-  const [bests, setBests] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!memberId) return;
-    supabase
-      .from('workout_logs')
-      .select('exercise, weight_kg')
-      .eq('member_id', memberId)
-      .not('weight_kg', 'is', null)
-      .order('weight_kg', { ascending: false })
-      .then(({ data }) => {
-        const map = {};
-        (data || []).forEach(l => {
-          if (!map[l.exercise] || l.weight_kg > map[l.exercise]) map[l.exercise] = l.weight_kg;
-        });
-        setBests(Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 8));
-        setLoading(false);
-      });
-  }, [memberId]);
-
-  if (loading) return <div className="h-20 bg-dark-600 rounded-xl animate-pulse" />;
-  if (bests.length === 0) return (
-    <p className="text-gray-500 text-sm text-center py-6">No lifting data yet — start logging! 💪</p>
-  );
-
+// ─── Input Field ─────────────────────────────────────────────
+function MeasureInput({ label, field, value, onChange, unit, icon: Icon, color }) {
   return (
-    <div className="space-y-2">
-      {bests.map(([exercise, weight], i) => (
-        <div key={exercise} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
-          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${
-            i === 0 ? 'bg-amber-500 text-white' : i === 1 ? 'bg-gray-400 text-white' : i === 2 ? 'bg-amber-700 text-white' : 'bg-dark-600 text-gray-400'
-          }`}>{i + 1}</span>
-          <span className="flex-1 text-gray-300 text-sm font-medium truncate">{exercise}</span>
-          <span className="text-primary-400 font-bold text-sm">{weight} kg</span>
-        </div>
-      ))}
+    <div>
+      <label className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+        <Icon className="w-3.5 h-3.5" style={{ color }} /> {label}
+      </label>
+      <div className="relative">
+        <input
+          type="number" step="0.1" min="0"
+          value={value} onChange={e => onChange(field, e.target.value)}
+          className="input-field pr-10"
+          placeholder="—"
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-semibold">{unit}</span>
+      </div>
     </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────
+const MEASURES = [
+  { label: 'Weight',   field: 'weight_kg', unit: 'kg', icon: Scale,    color: '#f97316' },
+  { label: 'Chest',    field: 'chest_cm',  unit: 'cm', icon: Ruler,    color: '#a855f7' },
+  { label: 'Waist',    field: 'waist_cm',  unit: 'cm', icon: Ruler,    color: '#3b82f6' },
+  { label: 'Hips',     field: 'hips_cm',   unit: 'cm', icon: Ruler,    color: '#ec4899' },
+  { label: 'Arms',     field: 'arms_cm',   unit: 'cm', icon: Activity, color: '#10b981' },
+  { label: 'Thighs',   field: 'thighs_cm', unit: 'cm', icon: Ruler,    color: '#f59e0b' },
+  { label: 'Body Fat', field: 'body_fat_pct', unit: '%', icon: TrendingDown, color: '#ef4444' },
+];
+
 export default function ProgressPage() {
   const { user } = useAuthStore();
-  const [member, setMember]       = useState(null);
-  const [attendChart, setAttendChart] = useState([]);
-  const [weightChart, setWeightChart] = useState([]);
-  const [showModal, setShowModal] = useState(false);
-  const [loading, setLoading]     = useState(true);
+  const [member,  setMember]  = useState(null);
+  const [logs,    setLogs]    = useState([]);  // all logs newest first
+  const [date,    setDate]    = useState(fmt(new Date()));
+  const [form,    setForm]    = useState({});
+  const [notes,   setNotes]   = useState('');
+  const [saving,  setSaving]  = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
+  const isToday   = date === fmt(new Date());
+  const todayLog  = logs.find(l => l.log_date === date);
+  const firstLog  = logs.length ? logs[logs.length - 1] : null;
+
+  const load = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const { data: m } = await supabase
-        .from('members').select('*').eq('profile_id', user.id).maybeSingle();
+      const { data: m } = await supabase.from('members').select('*').eq('profile_id', user.id).maybeSingle();
       if (!m) { setLoading(false); return; }
       setMember(m);
+      const { data } = await supabase.from('progress_logs').select('*')
+        .eq('member_id', m.id).order('log_date', { ascending: false }).limit(30);
+      setLogs(data || []);
+    } finally { setLoading(false); }
+  }, [user?.id]);
 
-      const last8Weeks = Array.from({ length: 8 }, (_, i) => {
-        const start = new Date();
-        start.setDate(start.getDate() - (7 - i) * 7);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 6);
-        return {
-          start: start.toISOString().split('T')[0],
-          end:   end.toISOString().split('T')[0],
-          label: `W${i + 1}`,
-        };
-      });
+  useEffect(() => { load(); }, [load]);
 
-      const [attendRes, measureRes] = await Promise.all([
-        supabase.from('attendance').select('created_at').eq('member_id', m.id)
-          .gte('created_at', last8Weeks[0].start),
-        supabase.from('member_measurements').select('logged_date, weight_kg')
-          .eq('member_id', m.id).order('logged_date').limit(30),
-      ]);
-
-      // Attendance by week
-      const dates = (attendRes.data || []).map(a => a.created_at);
-      setAttendChart(last8Weeks.map(w => ({
-        label: w.label,
-        count: dates.filter(d => d >= w.start && d <= w.end).length,
-      })));
-
-      // Weight timeline
-      setWeightChart((measureRes.data || [])
-        .filter(m => m.weight_kg)
-        .map(m => ({
-          date:   new Date(m.logged_date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-          weight: Number(m.weight_kg),
-        }))
-      );
-    } finally {
-      setLoading(false);
+  // When date changes, prefill from that day's log
+  useEffect(() => {
+    const log = logs.find(l => l.log_date === date);
+    if (log) {
+      const f = {};
+      MEASURES.forEach(m => { if (log[m.field]) f[m.field] = String(log[m.field]); });
+      setForm(f);
+      setNotes(log.notes || '');
+    } else {
+      setForm({});
+      setNotes('');
     }
+  }, [date, logs]);
+
+  const navigate = (dir) => {
+    const d = new Date(date); d.setDate(d.getDate() + dir);
+    if (d > new Date()) return;
+    setDate(fmt(d));
   };
 
-  useEffect(() => { fetchData(); }, [user?.id]);
+  const save = async () => {
+    if (!member) return;
+    if (!Object.values(form).some(v => v)) { toast.error('Enter at least one measurement'); return; }
+    setSaving(true);
+    try {
+      const row = {
+        gym_id:    member.gym_id,
+        member_id: member.id,
+        log_date:  date,
+        notes:     notes || null,
+        ...Object.fromEntries(MEASURES.map(m => [m.field, form[m.field] ? Number(form[m.field]) : null])),
+      };
+      const { error } = todayLog
+        ? await supabase.from('progress_logs').update(row).eq('id', todayLog.id)
+        : await supabase.from('progress_logs').insert(row);
+      if (error) throw error;
+      toast.success('Progress saved! 📈');
+      load();
+    } catch (e) { toast.error(e.message); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-7 h-7 border-2 border-primary-600/30 border-t-primary-500 rounded-full animate-spin" />
+    </div>
+  );
+  if (!member) return (
+    <div className="flex flex-col items-center justify-center h-64 text-center px-6 gap-3">
+      <TrendingUp className="w-12 h-12 text-gray-700" />
+      <p className="text-white font-semibold">Profile not linked</p>
+    </div>
+  );
+
+  // Build spark data for each metric
+  const sparkFor = (field) => [...logs].reverse().slice(-8).map(l => ({ value: l[field] }));
+
+  // Summary: change since first log
+  const latestLog = logs[0];
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-4 pb-8">
       {/* Header */}
-      <div className="px-5 pt-6 pb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-white">Progress</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Your fitness journey</p>
-        </div>
-        {member && (
-          <button
-            onClick={() => setShowModal(true)}
-            className="btn-primary flex items-center gap-2 text-sm"
-          >
-            <Plus className="w-4 h-4" /> Log
+      <div className="px-5 pt-6">
+        <h1 className="text-2xl font-black text-white flex items-center gap-2">
+          <TrendingUp className="w-6 h-6 text-primary-400" /> Progress
+        </h1>
+        <p className="text-gray-400 text-sm mt-0.5">Track your body transformation</p>
+
+        {/* Date nav */}
+        <div className="flex items-center justify-between mt-4 bg-dark-800 border border-white/5 rounded-2xl px-4 py-2.5">
+          <button onClick={() => navigate(-1)} className="p-1 text-gray-400 hover:text-white">
+            <ChevronLeft className="w-5 h-5" />
           </button>
-        )}
+          <div className="text-center">
+            <p className="text-white font-bold text-sm">
+              {isToday ? 'Today' : new Date(date).toLocaleDateString('en-IN', { weekday: 'long' })}
+            </p>
+            <p className="text-gray-500 text-xs">
+              {new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </p>
+          </div>
+          <button onClick={() => navigate(1)} disabled={isToday}
+            className="p-1 text-gray-400 hover:text-white disabled:opacity-30">
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
-      {loading ? (
-        <div className="px-5 space-y-4">
-          {[1, 2, 3].map(i => <div key={i} className="h-40 bg-dark-700 rounded-2xl animate-pulse" />)}
-        </div>
-      ) : !member ? (
-        <div className="flex flex-col items-center justify-center h-64 gap-2 px-6 text-center">
-          <Activity className="w-10 h-10 text-gray-700" />
-          <p className="text-gray-400 font-medium">Profile not linked</p>
-        </div>
-      ) : (
-        <div className="space-y-0">
-          {/* Attendance Chart */}
-          <div className="px-5 pb-4">
-            <div className="card">
-              <div className="flex items-center gap-2 mb-4">
-                <TrendingUp className="w-4 h-4 text-primary-400" />
-                <h2 className="text-white font-bold text-sm">Attendance — Last 8 Weeks</h2>
-              </div>
-              {attendChart.every(d => d.count === 0) ? (
-                <p className="text-gray-500 text-sm text-center py-4">No attendance data yet</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={attendChart} margin={{ left: -25 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                    <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                    <Tooltip content={<CustomTooltip unit=" sessions" />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                    <Bar dataKey="count" fill="url(#pGrad)" radius={[6, 6, 0, 0]} />
-                    <defs>
-                      <linearGradient id="pGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#c044ef" />
-                        <stop offset="100%" stopColor="#a21cce" stopOpacity={0.5} />
-                      </linearGradient>
-                    </defs>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-
-          {/* Weight Chart */}
-          <div className="px-5 pb-4">
-            <div className="card">
-              <div className="flex items-center gap-2 mb-4">
-                <Scale className="w-4 h-4 text-emerald-400" />
-                <h2 className="text-white font-bold text-sm">Weight Tracking</h2>
-                <span className="ml-auto text-xs text-gray-500">kg</span>
-              </div>
-              {weightChart.length < 2 ? (
-                <div className="text-center py-4">
-                  <p className="text-gray-500 text-sm">Not enough data yet</p>
-                  <p className="text-gray-600 text-xs mt-1">Log measurements to see your trend</p>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={160}>
-                  <LineChart data={weightChart} margin={{ left: -25 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                    <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
-                    <Tooltip content={<CustomTooltip unit=" kg" />} />
-                    <Line
-                      type="monotone" dataKey="weight"
-                      stroke="#10b981" strokeWidth={2}
-                      dot={{ fill: '#10b981', r: 3 }}
-                      activeDot={{ r: 5 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-
-          {/* Personal Bests */}
-          <div className="px-5 pb-4">
-            <div className="card">
-              <div className="flex items-center gap-2 mb-4">
-                <Award className="w-4 h-4 text-amber-400" />
-                <h2 className="text-white font-bold text-sm">Personal Bests</h2>
-                <span className="ml-auto text-xs text-gray-500">Max weight lifted</span>
-              </div>
-              <PersonalBests memberId={member?.id} />
-            </div>
+      {/* Progress overview cards */}
+      {latestLog && (
+        <div className="px-5">
+          <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-3">
+            Your Progress {firstLog && firstLog.log_date !== latestLog.log_date ? `since ${new Date(firstLog.log_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {MEASURES.filter(m => latestLog[m.field]).map(m => (
+              <StatCard
+                key={m.field}
+                label={m.label}
+                current={latestLog[m.field]}
+                first={firstLog?.[m.field]}
+                unit={m.unit}
+                icon={m.icon}
+                color={m.color}
+                sparkData={sparkFor(m.field)}
+              />
+            ))}
           </div>
         </div>
       )}
 
-      {showModal && member && (
-        <MeasurementModal
-          memberId={member.id}
-          gymId={member.gym_id}
-          onClose={() => setShowModal(false)}
-          onSaved={fetchData}
-        />
+      {/* Log form */}
+      <div className="px-5 card space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-white font-semibold flex items-center gap-2">
+            <Plus className="w-4 h-4 text-primary-400" />
+            {todayLog ? 'Update' : 'Log'} Measurements
+          </p>
+          {todayLog && (
+            <span className="text-emerald-400 text-xs flex items-center gap-1">
+              <Check className="w-3.5 h-3.5" /> Logged
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {MEASURES.map(m => (
+            <MeasureInput
+              key={m.field}
+              label={m.label}
+              field={m.field}
+              value={form[m.field] || ''}
+              onChange={(f, v) => setForm(p => ({ ...p, [f]: v }))}
+              unit={m.unit}
+              icon={m.icon}
+              color={m.color}
+            />
+          ))}
+        </div>
+
+        <div>
+          <label className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1.5 block">Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)}
+            className="input-field" rows={2}
+            placeholder="How are you feeling? Any changes in diet or workout?" />
+        </div>
+
+        <button onClick={save} disabled={saving}
+          className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50">
+          {saving
+            ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            : <Save className="w-4 h-4" />}
+          {saving ? 'Saving…' : todayLog ? 'Update Log' : 'Save Progress'}
+        </button>
+      </div>
+
+      {/* History list */}
+      {logs.length > 0 && (
+        <div className="px-5">
+          <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-3">Log History</p>
+          <div className="space-y-2">
+            {logs.slice(0, 10).map(l => (
+              <div key={l.id}
+                onClick={() => setDate(l.log_date)}
+                className={`card flex items-start justify-between cursor-pointer hover:border-primary-500/30 transition-all ${l.log_date === date ? 'border-primary-500/30 bg-primary-500/5' : ''}`}>
+                <div>
+                  <p className="text-white text-sm font-semibold">
+                    {new Date(l.log_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {l.log_date === fmt(new Date()) && <span className="ml-2 text-primary-400 text-xs">Today</span>}
+                  </p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                    {MEASURES.filter(m => l[m.field]).map(m => (
+                      <span key={m.field} className="text-gray-500 text-xs">
+                        {m.label}: <span className="text-gray-300 font-semibold">{l[m.field]}{m.unit}</span>
+                      </span>
+                    ))}
+                  </div>
+                  {l.notes && <p className="text-gray-600 text-xs mt-1 italic">"{l.notes}"</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {logs.length === 0 && (
+        <div className="px-5">
+          <div className="card text-center py-8">
+            <Scale className="w-10 h-10 text-gray-700 mx-auto mb-3" />
+            <p className="text-white font-semibold">No progress logs yet</p>
+            <p className="text-gray-500 text-sm mt-1">Log your first measurement above to start tracking your transformation!</p>
+          </div>
+        </div>
       )}
     </div>
   );

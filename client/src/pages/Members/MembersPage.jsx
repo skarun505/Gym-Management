@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw, Camera, Loader2 } from 'lucide-react';
+import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw, Camera, Loader2, AlertTriangle, Bell, Check } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
@@ -83,7 +83,7 @@ function CredentialsModal({ creds, onClose }) {
 
           {/* Warning */}
           <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl p-3">
-            <p className="text-amber-400 text-xs font-semibold mb-1">⚠️ Important</p>
+            <p className="text-amber-400 text-xs font-semibold mb-1 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Important</p>
             <ul className="text-amber-300/70 text-xs space-y-1 list-disc list-inside">
               <li>Share credentials privately (WhatsApp / in-person)</li>
               <li>Ask member to change password after first login</li>
@@ -98,26 +98,43 @@ function CredentialsModal({ creds, onClose }) {
   );
 }
 
-// ── Set Password Modal ─────────────────────────────────────────
+// ── Create Login Modal ─────────────────────────────────────────
 function CreateLoginModal({ member, onClose, onSuccess }) {
   const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(member.email || '');
   const [loading, setLoading] = useState(false);
 
+  // If no email, show info that phone will be used as virtual login
+  const hasEmail = !!email.trim();
+  const willUsePhone = !hasEmail && !!member.phone;
+  const canSubmit = hasEmail || willUsePhone;
+
   const handleCreate = async () => {
+    if (!canSubmit) {
+      toast.error('Please enter an email address or ensure the member has a phone number.');
+      return;
+    }
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error('Not authenticated. Please log in again.');
+
       const res = await fetch(CREATE_LOGIN_URL, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${token}`,
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ memberId: member.id, password: password || undefined }),
+        body: JSON.stringify({
+          memberId: member.id,
+          password: password || undefined,
+          emailOverride: hasEmail ? email.trim() : undefined,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
+      if (!res.ok) throw new Error(data.error || 'Failed to create login');
       onSuccess(data);
     } catch (err) {
       toast.error(err.message);
@@ -125,9 +142,6 @@ function CreateLoginModal({ member, onClose, onSuccess }) {
       setLoading(false);
     }
   };
-
-  // Auto-generate preview password
-  const preview = `Gym@${new Date().getFullYear()}XX`;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -143,27 +157,50 @@ function CreateLoginModal({ member, onClose, onSuccess }) {
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
         </div>
         <div className="p-6 space-y-4">
-          <div className="bg-dark-700 rounded-xl p-3">
-            <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Email (login)</p>
-            <p className="text-white font-mono text-sm">{member.email}</p>
-          </div>
+          {/* Email field — editable */}
           <div>
-            <label className="label">Password <span className="text-gray-600 font-normal">(optional — auto-generated if blank)</span></label>
+            <label className="label">
+              Email (Login ID)
+              {!member.email && <span className="text-amber-400 font-normal ml-1 text-xs">— not saved yet</span>}
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="input-field"
+              placeholder="member@email.com"
+            />
+            {!hasEmail && member.phone && (
+              <p className="text-amber-400 text-[11px] mt-1.5 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                No email — member will log in using phone: <span className="font-mono ml-1">{member.phone}</span>
+              </p>
+            )}
+            {!hasEmail && !member.phone && (
+              <p className="text-red-400 text-[11px] mt-1.5">
+                Member has no email or phone. Please add one first.
+              </p>
+            )}
+          </div>
+
+          {/* Password */}
+          <div>
+            <label className="label">Password <span className="text-gray-600 font-normal">(leave blank to auto-generate)</span></label>
             <input
               value={password}
               onChange={e => setPassword(e.target.value)}
               type="text"
-              className="input-field"
-              placeholder={`e.g. ${preview}`}
+              className="input-field font-mono"
+              placeholder="auto-generated if blank"
             />
-            <p className="text-gray-600 text-[11px] mt-1">Leave blank to auto-generate a strong password</p>
           </div>
+
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
             <button
               onClick={handleCreate}
-              disabled={loading}
-              className="btn-primary flex-1 flex items-center justify-center gap-2"
+              disabled={loading || !canSubmit}
+              className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {loading
                 ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -195,10 +232,15 @@ function computeEndDate(startDate, duration) {
 function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
   const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm({
     defaultValues: member
-      ? { ...member }
+      ? {
+          ...member,
+          // Convert joined_at (timestamptz) → plain date string for the input
+          joined_at: member.joined_at ? member.joined_at.split('T')[0] : new Date().toISOString().split('T')[0],
+        }
       : {
           status:     'active',
           start_date: new Date().toISOString().split('T')[0],
+          joined_at:  new Date().toISOString().split('T')[0],
         },
   });
 
@@ -246,7 +288,18 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
   const planId    = watch('plan_id');
   const startDate = watch('start_date');
 
-  useEffect(() => { reset(member ? { ...member } : { status: 'active', start_date: new Date().toISOString().split('T')[0] }); }, [member]);
+  useEffect(() => {
+    reset(member
+      ? {
+          ...member,
+          joined_at: member.joined_at ? member.joined_at.split('T')[0] : new Date().toISOString().split('T')[0],
+        }
+      : {
+          status:    'active',
+          start_date: new Date().toISOString().split('T')[0],
+          joined_at:  new Date().toISOString().split('T')[0],
+        });
+  }, [member]);
 
   // Load active subscription when editing
   useEffect(() => {
@@ -328,32 +381,35 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
       if (member?.id) {
         // Update existing
         const { error } = await supabase.from('members').update({
-          full_name:    data.full_name,
-          phone:        data.phone,
-          email:        data.email,
-          dob:          data.dob || null,
-          address:      data.address,
-          photo_url:    data.photo_url || null,
-          fitness_goal: data.fitness_goal,
-          health_notes: data.health_notes,
-          status:       data.status,
+          full_name:     data.full_name,
+          phone:         data.phone,
+          email:         data.email,
+          dob:           data.dob || null,
+          address:       data.address,
+          photo_url:     data.photo_url || null,
+          fitness_goal:  data.fitness_goal,
+          health_notes:  data.health_notes,
+          status:        data.status,
+          joined_at:     data.joined_at || null,
+          admission_fee: data.admission_fee ? Number(data.admission_fee) : null,
         }).eq('id', member.id);
         if (error) throw error;
         toast.success('Member updated!');
       } else {
         // Insert new member
         const { data: newMember, error } = await supabase.from('members').insert({
-          gym_id:       gymId,
-          member_code:  genMemberCode(gymCode),
-          full_name:    data.full_name,
-          phone:        data.phone,
-          email:        data.email,
-          dob:          data.dob || null,
-          address:      data.address,
-          photo_url:    data.photo_url || null,
-          fitness_goal: data.fitness_goal,
-          health_notes: data.health_notes,
-          status:       data.status || 'active',
+          gym_id:        gymId,
+          member_code:   genMemberCode(gymCode),
+          full_name:     data.full_name,
+          phone:         data.phone,
+          email:         data.email,
+          dob:           data.dob || null,
+          address:       data.address,
+          photo_url:     data.photo_url || null,
+          fitness_goal:  data.fitness_goal,
+          health_notes:  data.health_notes,
+          status:        data.status || 'active',
+          admission_fee: data.admission_fee ? Number(data.admission_fee) : null,
         }).select().single();
         if (error) throw error;
         memberId = newMember.id;
@@ -493,11 +549,33 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
                 <input {...register('dob')} type="date" className="input-field" />
               </div>
               <div>
+                <label className="label">Joining Date</label>
+                <input {...register('joined_at')} type="date" className="input-field" />
+              </div>
+              <div>
                 <label className="label">Status</label>
                 <select {...register('status')} className="input-field">
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
+              </div>
+              <div className="col-span-2">
+                <label className="label">
+                  Admission Fee (₹)
+                  <span className="text-gray-500 font-normal ml-1 text-xs">— one-time</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">₹</span>
+                  <input
+                    {...register('admission_fee')}
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="input-field pl-7"
+                    placeholder="e.g. 500"
+                  />
+                </div>
+                <p className="text-gray-600 text-[11px] mt-1">Leave blank if no admission fee is charged.</p>
               </div>
               <div className="col-span-2">
                 <label className="label">Address</label>
@@ -588,8 +666,8 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
                         {/* Reminder preview */}
                         {selectedPlan && watch('end_date') && (
                           <div className="bg-dark-700/60 rounded-xl p-4 space-y-2">
-                            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">
-                              🔔 Auto-Reminders Scheduled
+                            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                              <Bell className="w-3.5 h-3.5 text-amber-400" /> Auto-Reminders Scheduled
                             </p>
                             {[
                               { label: '7 days before', days: 7,  color: 'text-amber-400' },
@@ -933,13 +1011,13 @@ export default function MembersPage() {
                             : 'text-gray-500'
                           }`}>
                             {urgency === 'paid'
-                              ? '✓ Paid'
+                              ? <span className="flex items-center gap-1"><Check className="w-3 h-3" /> Paid</span>
                               : urgency === 'critical'
-                              ? `⚠️ Expires in < 24h`
+                              ? <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Expires in &lt; 24h</span>
                               : urgency === 'warning'
-                              ? `⚠️ ${sub.daysLeft}d left`
+                              ? <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {sub.daysLeft}d left</span>
                               : urgency === 'caution'
-                              ? `🔔 ${sub.daysLeft}d left`
+                              ? <span className="flex items-center gap-1"><Bell className="w-3 h-3" /> {sub.daysLeft}d left</span>
                               : `${sub.daysLeft}d left`}
                           </span>
                         </div>
@@ -973,7 +1051,7 @@ export default function MembersPage() {
                         {m.status}
                       </span>
                     </td>
-                    <td className="text-gray-400 text-sm">{new Date(m.joined_at).toLocaleDateString('en-IN')}</td>
+                    <td className="text-gray-400 text-sm">{m.joined_at ? new Date(m.joined_at).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}</td>
                     <td>
                       <div className="flex items-center gap-2">
                         <button onClick={() => setModalMember(m)} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors">

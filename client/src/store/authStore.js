@@ -9,9 +9,21 @@ const useAuthStore = create((set, get) => ({
   error: null,
 
   // ── Login ──────────────────────────────────────────────
-  login: async (email, password) => {
+  // identifier may be an email OR a phone number
+  login: async (identifier, password) => {
     set({ isLoading: true, error: null });
     try {
+      // Detect phone: no '@' sign → treat as mobile number
+      let email = identifier.trim();
+      const isPhone = !email.includes('@');
+      if (isPhone) {
+        const { data: resolved, error: rpcError } = await supabase
+          .rpc('get_email_by_phone', { phone_input: email });
+        if (rpcError || !resolved)
+          throw new Error('No account found for this mobile number.');
+        email = resolved;
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
 

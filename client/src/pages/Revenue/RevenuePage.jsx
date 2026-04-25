@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
   IndianRupee, TrendingUp, Users, AlertCircle, Wallet,
-  Download, Calendar, BarChart2, PieChart as PieIcon, RefreshCw
+  Download, Calendar, BarChart2, PieChart as PieIcon, RefreshCw,
+  Banknote, Smartphone, CreditCard, Landmark, CheckCircle2
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -40,7 +41,9 @@ export default function RevenuePage() {
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [duesList, setDuesList] = useState([]);
   const [recentPayments, setRecentPayments] = useState([]);
-  const [period, setPeriod] = useState('6m'); // '3m' | '6m' | '12m'
+  const [period, setPeriod] = useState('6m'); // '1m' | '3m' | '6m' | '12m' | 'custom'
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo]   = useState('');
 
   const fetchAll = async () => {
     if (!user?.gym_id) return;
@@ -48,28 +51,67 @@ export default function RevenuePage() {
     const gymId = user.gym_id;
     const today = new Date();
 
-    const monthsBack = period === '3m' ? 3 : period === '6m' ? 6 : 12;
+    const monthsBack = period === '1m' ? 1 : period === '3m' ? 3 : period === '6m' ? 6 : 12;
+
+    // Custom date range overrides preset
+    let fromDate, toDateStr;
+    if (period === 'custom' && customFrom && customTo) {
+      fromDate   = customFrom;
+      toDateStr  = customTo;
+    }
 
     try {
-      // Build month buckets
-      const months = Array.from({ length: monthsBack }, (_, i) => {
-        const d = new Date(today.getFullYear(), today.getMonth() - (monthsBack - 1 - i), 1);
-        return {
-          key:   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}`,
-          label: `${MONTH_NAMES[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`,
-          start: d.toISOString().split('T')[0],
-          end:   new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0],
-        };
-      });
-
-      const fromDate = months[0].start;
+      // Build month buckets for preset periods
+      let months;
+      if (period === 'custom' && customFrom && customTo) {
+        // Build day buckets for custom range
+        const start = new Date(customFrom);
+        const end   = new Date(customTo);
+        const diffDays = Math.ceil((end - start) / 86400000) + 1;
+        // Group by month if range > 31 days, else by day
+        if (diffDays > 31) {
+          const mSet = {};
+          for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
+            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            if (!mSet[key]) mSet[key] = {
+              key,
+              label: `${MONTH_NAMES[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`,
+              start: key + '-01',
+              end: new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().split('T')[0],
+            };
+          }
+          months = Object.values(mSet);
+        } else {
+          months = Array.from({ length: diffDays }, (_, i) => {
+            const d = new Date(start); d.setDate(d.getDate() + i);
+            const iso = d.toISOString().split('T')[0];
+            return { key: iso, label: iso.slice(5), start: iso, end: iso };
+          });
+        }
+      } else {
+        months = Array.from({ length: monthsBack }, (_, i) => {
+          const d = new Date(today.getFullYear(), today.getMonth() - (monthsBack - 1 - i), 1);
+          return {
+            key:   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}`,
+            label: `${MONTH_NAMES[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`,
+            start: d.toISOString().split('T')[0],
+            end:   new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0],
+          };
+        });
+        fromDate  = months[0].start;
+        toDateStr = months[months.length - 1].end;
+      }
 
       const [paymentsRes, subsRes, duesRes, recentRes] = await Promise.all([
         // All fee payments in period
-        supabase.from('fee_payments')
-          .select('amount_paid, payment_date, payment_method')
-          .eq('gym_id', gymId)
-          .gte('payment_date', fromDate),
+        (() => {
+          let q = supabase.from('fee_payments')
+            .select('amount_paid, payment_date, payment_method')
+            .eq('gym_id', gymId)
+            .gte('payment_date', fromDate);
+          if (toDateStr) q = q.lte('payment_date', toDateStr);
+          return q;
+        })(),
         // All subscriptions for plan breakdown
         supabase.from('member_subscriptions')
           .select('*, subscription_plans(plan_name, price, duration)')
@@ -95,10 +137,13 @@ export default function RevenuePage() {
       const monthMap = {};
       months.forEach(m => { monthMap[m.key] = { label: m.label, revenue: 0, txns: 0 }; });
       allPayments.forEach(p => {
-        const k = p.payment_date?.slice(0, 7);
-        if (monthMap[k]) {
-          monthMap[k].revenue += Number(p.amount_paid);
-          monthMap[k].txns += 1;
+        // Match by full date key (for daily) or month prefix (for monthly)
+        const kFull  = p.payment_date;
+        const kMonth = p.payment_date?.slice(0, 7);
+        const key    = monthMap[kFull] ? kFull : kMonth;
+        if (monthMap[key]) {
+          monthMap[key].revenue += Number(p.amount_paid);
+          monthMap[key].txns += 1;
         }
       });
       setMonthlyRevenue(Object.values(monthMap));
@@ -169,9 +214,14 @@ export default function RevenuePage() {
     }
   };
 
-  useEffect(() => { fetchAll(); }, [user?.gym_id, period]);
+  useEffect(() => { fetchAll(); }, [user?.gym_id, period, customFrom, customTo]);
 
-  const METHOD_EMOJI = { Cash: '💵', Upi: '📱', Card: '💳', 'Bank Transfer': '🏦' };
+  const METHOD_ICON = {
+    Cash: <Banknote className="w-4 h-4" />,
+    Upi: <Smartphone className="w-4 h-4" />,
+    Card: <CreditCard className="w-4 h-4" />,
+    'Bank Transfer': <Landmark className="w-4 h-4" />,
+  };
 
   const handleExportDues = () => {
     if (!duesList.length) { toast('No outstanding dues'); return; }
@@ -189,7 +239,9 @@ export default function RevenuePage() {
 
   const kpiCards = [
     {
-      label: `Revenue (${period})`,
+      label: period === 'custom' && customFrom && customTo
+        ? `Revenue (${customFrom} → ${customTo})`
+        : `Revenue (${period})`,
       value: `₹${(kpis.totalRevenue || 0).toLocaleString('en-IN')}`,
       icon: TrendingUp,
       color: 'from-primary-600 to-primary-500',
@@ -229,10 +281,10 @@ export default function RevenuePage() {
           </h1>
           <p className="page-subtitle">Track income, dues, and payment trends</p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Period selector */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Preset period selector */}
           <div className="flex gap-1 bg-dark-700 rounded-xl p-1 border border-white/8">
-            {['3m','6m','12m'].map(p => (
+            {['1m','3m','6m','12m','custom'].map(p => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
@@ -240,10 +292,30 @@ export default function RevenuePage() {
                   period === p ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
-                {p === '3m' ? '3 Months' : p === '6m' ? '6 Months' : '1 Year'}
+                {p === '1m' ? '1 Month' : p === '3m' ? '3 Months' : p === '6m' ? '6 Months' : p === '12m' ? '1 Year' : 'Custom'}
               </button>
             ))}
           </div>
+
+          {/* Custom date range */}
+          {period === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customFrom}
+                onChange={e => setCustomFrom(e.target.value)}
+                className="input-field py-1.5 text-sm w-36"
+              />
+              <span className="text-gray-500 text-xs">to</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={e => setCustomTo(e.target.value)}
+                className="input-field py-1.5 text-sm w-36"
+              />
+            </div>
+          )}
+
           <button
             onClick={fetchAll}
             disabled={loading}
@@ -385,7 +457,9 @@ export default function RevenuePage() {
                 {paymentMethods.map((m, i) => (
                   <div key={m.name} className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-base">{METHOD_EMOJI[m.name] || '💰'}</span>
+                      <span className="w-8 h-8 rounded-lg bg-dark-600 flex items-center justify-center text-primary-400 flex-shrink-0">
+                      {METHOD_ICON[m.name] || <IndianRupee className="w-4 h-4" />}
+                    </span>
                       <span className="text-gray-300 text-sm">{m.name}</span>
                     </div>
                     <span className="text-white font-bold text-sm">₹{Number(m.value).toLocaleString('en-IN')}</span>

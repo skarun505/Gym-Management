@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, X, CreditCard, Trash2, Edit2, Save, IndianRupee, Wallet, History, CheckCircle2 } from 'lucide-react';
+import { Plus, X, CreditCard, Trash2, Edit2, Save, IndianRupee, Wallet, History, CheckCircle2, Banknote, Smartphone, Landmark, AlertTriangle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
@@ -364,10 +364,10 @@ function PaymentModal({ sub, gymId, onClose, onSave }) {
 
   const pct = totalDue > 0 ? Math.min(100, (totalPaid / totalDue) * 100) : 0;
   const METHODS = [
-    { id: 'cash',          label: 'Cash',     emoji: '💵' },
-    { id: 'upi',           label: 'UPI',      emoji: '📱' },
-    { id: 'card',          label: 'Card',     emoji: '💳' },
-    { id: 'bank_transfer', label: 'Transfer', emoji: '🏦' },
+    { id: 'cash',          label: 'Cash',     icon: <Banknote className="w-5 h-5" /> },
+    { id: 'upi',           label: 'UPI',      icon: <Smartphone className="w-5 h-5" /> },
+    { id: 'card',          label: 'Card',     icon: <CreditCard className="w-5 h-5" /> },
+    { id: 'bank_transfer', label: 'Transfer', icon: <Landmark className="w-5 h-5" /> },
   ];
 
   return (
@@ -410,9 +410,11 @@ function PaymentModal({ sub, gymId, onClose, onSave }) {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">{pct.toFixed(0)}% paid</span>
-              <span className={`font-bold ${balance <= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {balance <= 0 ? '✅ Fully Paid' : `Balance: ₹${balance.toLocaleString('en-IN')}`}
-              </span>
+                <span className={`font-bold ${balance <= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {balance <= 0
+                    ? <span className="flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Fully Paid</span>
+                    : `Balance: ₹${balance.toLocaleString('en-IN')}`}
+                </span>
             </div>
           </div>
 
@@ -470,7 +472,7 @@ function PaymentModal({ sub, gymId, onClose, onSave }) {
                           : 'border-white/8 bg-dark-700/40 text-gray-400 hover:border-white/20'
                       }`}
                     >
-                      <span className="text-base">{m.emoji}</span>
+                      <span className="text-primary-400">{m.icon}</span>
                       {m.label}
                     </button>
                   ))}
@@ -525,7 +527,7 @@ function PaymentHistoryModal({ sub, gymId, onClose }) {
       .then(({ data }) => { setPayments(data || []); setLoading(false); });
   }, [sub.id]);
 
-  const METHOD_EMOJI = { cash: '💵', upi: '📱', card: '💳', bank_transfer: '🏦' };
+  const METHOD_ICON = { cash: <Banknote className="w-5 h-5" />, upi: <Smartphone className="w-5 h-5" />, card: <CreditCard className="w-5 h-5" />, bank_transfer: <Landmark className="w-5 h-5" /> };
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount_paid), 0);
 
   return (
@@ -576,7 +578,9 @@ function PaymentHistoryModal({ sub, gymId, onClose }) {
               {payments.map((p, i) => (
                 <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-dark-700/50 border border-white/5">
                   <div className="flex items-center gap-3">
-                    <span className="text-xl">{METHOD_EMOJI[p.payment_method] || '💵'}</span>
+                    <span className="w-9 h-9 rounded-xl bg-dark-600 flex items-center justify-center text-primary-400 flex-shrink-0">
+                      {METHOD_ICON[p.payment_method] || <Banknote className="w-5 h-5" />}
+                    </span>
                     <div>
                       <p className="text-white font-semibold text-sm">₹{Number(p.amount_paid).toLocaleString('en-IN')}</p>
                       <p className="text-gray-500 text-xs">{p.payment_date} · <span className="capitalize">{p.payment_method?.replace('_', ' ')}</span></p>
@@ -789,7 +793,7 @@ export default function SubscriptionsPage() {
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] text-gray-500">₹{paid.toLocaleString('en-IN')} / ₹{due.toLocaleString('en-IN')}</span>
                             {fullPaid
-                              ? <span className="text-[10px] text-emerald-400 font-bold">✅ Paid</span>
+                              ? <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold"><CheckCircle2 className="w-3 h-3" /> Paid</span>
                               : <span className="text-[10px] text-red-400 font-semibold">-₹{bal.toLocaleString('en-IN')}</span>}
                           </div>
                         </div>

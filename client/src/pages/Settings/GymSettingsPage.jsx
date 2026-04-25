@@ -438,8 +438,9 @@ function DangerZoneTab({ gym }) {
         </div>
 
         <div className="border-t border-red-500/20 pt-4">
-          <p className="text-gray-500 text-xs">
-            ⚠️ To suspend or delete this gym account, contact your platform super admin.
+          <p className="text-gray-500 text-xs flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+            To suspend or delete this gym account, contact your platform super admin.
           </p>
         </div>
       </div>
