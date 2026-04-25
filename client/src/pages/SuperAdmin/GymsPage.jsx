@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, X, Building2, Search, Eye, EyeOff,
   Copy, CheckCircle, AlertCircle, RefreshCw,
-  ShieldOff, ShieldCheck, ChevronDown, Edit2, Save
+  ShieldOff, ShieldCheck, ChevronDown, Edit2, Save, KeyRound, Lock,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
@@ -79,6 +79,134 @@ function CredentialsModal({ credentials, onClose }) {
             </button>
             <button onClick={onClose} className="btn-secondary">Done</button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reset Owner Password Modal ────────────────────────────────
+function ResetOwnerPasswordModal({ gym, onClose }) {
+  const [password, setPassword] = useState('');
+  const [visible, setVisible]   = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [done, setDone]         = useState(false);
+
+  const generate = () => {
+    setPassword(generatePassword(14));
+    setVisible(true);
+  };
+
+  const handleReset = async () => {
+    if (!password || password.length < 8) { toast.error('Min 8 characters'); return; }
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Session expired');
+      const res = await fetch(
+        'https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/reset-owner-password',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ gymId: gym.id, newPassword: password }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      toast.success(`Password reset for ${gym.owner_name}!`);
+      setDone(true);
+    } catch (e) { toast.error(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const copyCredentials = () => {
+    const text = `GymPro Login Credentials\n\nGym: ${gym.name}\nEmail: (existing owner email)\nNew Password: ${password}\n\nLogin: ${window.location.origin}/login`;
+    navigator.clipboard.writeText(text);
+    toast.success('Copied!');
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-content max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="p-5 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+              <KeyRound className="w-4 h-4 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-white font-semibold">Reset Owner Password</p>
+              <p className="text-gray-500 text-xs">{gym.name} · {gym.owner_name}</p>
+            </div>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {!done ? (
+            <>
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300">
+                ⚠️ This will immediately change the login password for <strong>{gym.owner_name}</strong> ({gym.name}). The owner must use this new password to log in.
+              </div>
+              <div>
+                <label className="label">New Password *</label>
+                <div className="relative">
+                  <input value={password} onChange={e => setPassword(e.target.value)}
+                    type={visible ? 'text' : 'password'} placeholder="Min 8 characters"
+                    className="input-field pr-12 font-mono" />
+                  <button type="button" onClick={() => setVisible(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+                    {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <button onClick={generate} type="button"
+                  className="mt-1.5 text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> Auto-generate strong password
+                </button>
+              </div>
+              {password && visible && (
+                <div className="p-3 bg-dark-700 border border-white/10 rounded-xl space-y-1">
+                  <p className="text-xs text-gray-500 font-semibold">📋 Save before resetting:</p>
+                  <p className="text-white text-sm font-mono">{password}</p>
+                  <button onClick={copyCredentials}
+                    className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 mt-1">
+                    <Copy className="w-3 h-3" /> Copy credentials
+                  </button>
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+                <button onClick={handleReset} disabled={saving}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg,#d97706,#b45309)' }}>
+                  {saving
+                    ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    : <KeyRound className="w-4 h-4" />}
+                  {saving ? 'Resetting…' : 'Reset Password'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-4 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto">
+                <CheckCircle className="w-6 h-6 text-emerald-400" />
+              </div>
+              <p className="text-white font-semibold">Password Reset!</p>
+              <p className="text-gray-400 text-sm">{gym.owner_name} can now log in with the new password.</p>
+              <div className="p-3 bg-dark-700 rounded-xl font-mono text-sm text-emerald-400 border border-emerald-500/20">
+                {password}
+              </div>
+              <div className="flex gap-3">
+                <button onClick={copyCredentials} className="btn-secondary flex-1 flex items-center justify-center gap-2">
+                  <Copy className="w-4 h-4" /> Copy
+                </button>
+                <button onClick={onClose} className="btn-primary flex-1">Done</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -463,6 +591,7 @@ export default function GymsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [credentials, setCredentials] = useState(null);
   const [editGym, setEditGym] = useState(null);
+  const [resetGym, setResetGym] = useState(null); // for password reset
 
   const fetchGyms = useCallback(async () => {
     setLoading(true);
@@ -622,13 +751,20 @@ export default function GymsPage() {
                     {new Date(gym.created_at).toLocaleDateString('en-IN')}
                   </td>
                   <td>
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1">
                       <button
                         onClick={() => setEditGym(gym)}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
                         title="Edit gym details"
                       >
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setResetGym(gym)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                        title="Reset owner password"
+                      >
+                        <KeyRound className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => toggleStatus(gym)}
@@ -675,6 +811,12 @@ export default function GymsPage() {
           gym={editGym}
           onClose={() => setEditGym(null)}
           onSaved={() => { setEditGym(null); fetchGyms(); }}
+        />
+      )}
+      {resetGym && (
+        <ResetOwnerPasswordModal
+          gym={resetGym}
+          onClose={() => setResetGym(null)}
         />
       )}
     </div>
