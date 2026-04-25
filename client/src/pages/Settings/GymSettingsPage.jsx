@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import {
   Settings, Building2, Palette, CreditCard, AlertTriangle,
   Save, CheckCircle, Upload, RefreshCw, Trash2, Plus, X, Camera, Loader2,
+  KeyRound, Shield, Users, Lock, Eye, EyeOff,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
@@ -399,7 +400,228 @@ function PlansTab({ gymId }) {
   );
 }
 
-// ── ④ Danger Zone Tab ─────────────────────────────────────────
+// ── ④ Access Control Tab ──────────────────────────────────────
+function ResetPasswordModal({ account, onClose, onSuccess }) {
+  const [password, setPassword] = useState('');
+  const [visible, setVisible]   = useState(false);
+  const [saving, setSaving]     = useState(false);
+
+  const generate = () => {
+    const c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#!';
+    setPassword(Array.from({ length: 12 }, () => c[Math.floor(Math.random() * c.length)]).join(''));
+    setVisible(true);
+  };
+
+  const save = async () => {
+    if (!password || password.length < 8) { toast.error('Min 8 characters'); return; }
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Session expired');
+      const fnName  = account.type === 'staff' ? 'create-staff-login' : 'create-member-login';
+      const bodyKey = account.type === 'staff' ? 'staff_id'           : 'memberId';
+      const res = await fetch(
+        `https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/${fnName}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ [bodyKey]: account.id, password, full_name: account.name }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      toast.success(`Password reset for ${account.name}!`);
+      onSuccess();
+    } catch (e) { toast.error(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="p-5 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+              <KeyRound className="w-4 h-4 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-white font-semibold text-sm">Reset Password</p>
+              <p className="text-gray-500 text-xs">{account.name} · {account.email}</p>
+            </div>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300">
+            🔄 This will immediately update the login password for <strong>{account.name}</strong>. Share the new password with them.
+          </div>
+          <div>
+            <label className="label">New Password *</label>
+            <div className="relative">
+              <input value={password} onChange={e => setPassword(e.target.value)}
+                type={visible ? 'text' : 'password'} placeholder="Min 8 characters"
+                className="input-field pr-20" />
+              <button type="button" onClick={() => setVisible(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+                {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <button onClick={generate} type="button"
+              className="mt-1.5 text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1">
+              <Lock className="w-3 h-3" /> Auto-generate strong password
+            </button>
+          </div>
+          {password && visible && (
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+              <p className="text-xs text-emerald-400 font-semibold">📋 Save these credentials:</p>
+              <p className="text-white text-sm font-mono mt-1">{account.email}</p>
+              <p className="text-white text-sm font-mono">{password}</p>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+            <button onClick={save} disabled={saving}
+              className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50">
+              {saving
+                ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                : <KeyRound className="w-4 h-4" />}
+              {saving ? 'Resetting…' : 'Reset Password'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccessControlTab({ gymId }) {
+  const [accounts, setAccounts] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [selected, setSelected] = useState(null); // account to reset pw
+  const [filter, setFilter]     = useState('all'); // all | staff | member
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: staffList }, { data: memberList }] = await Promise.all([
+      supabase.from('staff')
+        .select('id, full_name, role, email, profile_id')
+        .eq('gym_id', gymId)
+        .not('profile_id', 'is', null),
+      supabase.from('members')
+        .select('id, full_name, email, phone, member_code, profile_id')
+        .eq('gym_id', gymId)
+        .not('profile_id', 'is', null),
+    ]);
+    const s = (staffList  || []).map(r => ({ ...r, type: 'staff',  name: r.full_name, email: r.email || '—' }));
+    const m = (memberList || []).map(r => ({ ...r, type: 'member', name: r.full_name, email: r.email || r.phone || '—' }));
+    setAccounts([...s, ...m]);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [gymId]);
+
+  const shown = accounts.filter(a => filter === 'all' || a.type === filter);
+
+  const ROLE_COLOR = {
+    trainer:    'text-violet-400 bg-violet-500/10 border-violet-500/20',
+    receptionist: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+    staff:      'text-gray-400 bg-white/5 border-white/10',
+    member:     'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Header stats */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Total Accounts', value: accounts.length,                                icon: Users,   color: 'text-white' },
+          { label: 'Staff Logins',   value: accounts.filter(a => a.type === 'staff').length,  icon: Shield,  color: 'text-primary-400' },
+          { label: 'Member Logins',  value: accounts.filter(a => a.type === 'member').length, icon: KeyRound,color: 'text-emerald-400' },
+        ].map(({ label, value, icon: Icon, color }) => (
+          <div key={label} className="card p-4 flex items-center gap-3">
+            <Icon className={`w-5 h-5 ${color} flex-shrink-0`} />
+            <div>
+              <p className="text-2xl font-bold text-white">{value}</p>
+              <p className="text-xs text-gray-500">{label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter */}
+      <div className="flex gap-2">
+        {['all','staff','member'].map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${
+              filter === f ? 'bg-primary-600/20 text-primary-300 border border-primary-500/30' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}>
+            {f === 'all' ? 'All Accounts' : `${f.charAt(0).toUpperCase() + f.slice(1)} Only`}
+          </button>
+        ))}
+      </div>
+
+      {/* Account list */}
+      {loading ? (
+        <div className="space-y-3">
+          {[1,2,3,4].map(i => <div key={i} className="h-16 bg-dark-700 rounded-xl animate-pulse" />)}
+        </div>
+      ) : shown.length === 0 ? (
+        <div className="text-center py-12">
+          <Shield className="w-10 h-10 text-gray-700 mx-auto mb-3" />
+          <p className="text-gray-400 font-medium">No accounts yet</p>
+          <p className="text-gray-600 text-sm mt-1">Go to Staff page or Members page to generate logins.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {shown.map(acc => (
+            <div key={acc.id}
+              className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-dark-700/40 hover:bg-dark-700/70 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold ${
+                  acc.type === 'staff' ? 'bg-primary-600/20 text-primary-400' : 'bg-emerald-500/10 text-emerald-400'
+                }`}>
+                  {acc.name.charAt(0)}
+                </div>
+                <div>
+                  <p className="text-white font-medium text-sm">{acc.name}</p>
+                  <p className="text-gray-500 text-xs font-mono">{acc.email}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${
+                  ROLE_COLOR[acc.role || acc.type] || ROLE_COLOR.staff
+                }`}>
+                  {acc.role || acc.type}
+                </span>
+                <button
+                  onClick={() => setSelected(acc)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+                    bg-amber-500/10 text-amber-400 border border-amber-500/20
+                    hover:bg-amber-500/20 transition-colors">
+                  <KeyRound className="w-3.5 h-3.5" /> Reset Password
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <ResetPasswordModal
+          account={selected}
+          onClose={() => setSelected(null)}
+          onSuccess={() => { setSelected(null); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── ⑤ Danger Zone Tab ─────────────────────────────────────────
 function DangerZoneTab({ gym }) {
   return (
     <div className="space-y-4 max-w-lg">
@@ -468,10 +690,11 @@ export default function GymSettingsPage() {
   }, [user?.gym_id]);
 
   const tabs = [
-    { key: 'profile', label: 'Gym Profile',   icon: Building2 },
-    { key: 'theme',   label: 'Theme & Branding', icon: Palette },
-    { key: 'plans',   label: 'Subscription Plans', icon: CreditCard },
-    { key: 'danger',  label: 'Info & Danger',  icon: AlertTriangle },
+    { key: 'profile',  label: 'Gym Profile',        icon: Building2    },
+    { key: 'theme',    label: 'Theme & Branding',    icon: Palette      },
+    { key: 'plans',    label: 'Subscription Plans',  icon: CreditCard   },
+    { key: 'access',   label: 'Access Control',      icon: Shield       },
+    { key: 'danger',   label: 'Info & Danger',       icon: AlertTriangle },
   ];
 
   if (loading) {
@@ -517,6 +740,9 @@ export default function GymSettingsPage() {
         )}
         {tab === 'plans' && (
           <PlansTab gymId={user.gym_id} />
+        )}
+        {tab === 'access' && (
+          <AccessControlTab gymId={user.gym_id} />
         )}
         {tab === 'danger' && (
           <DangerZoneTab gym={gym} />
