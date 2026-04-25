@@ -3,6 +3,14 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.jsx';
 
+// ── One-time PWA key migration: clear old dismissed flag ────
+// v2 key is obsolete; clearing it ensures returning users see the new popup
+if (localStorage.getItem('gympro-pwa-dismissed-v2') === 'true') {
+  localStorage.removeItem('gympro-pwa-dismissed-v2');
+  // Also wipe the timestamp so it appears fresh
+  localStorage.removeItem('gympro-pwa-dismissed-at');
+}
+
 // ── Register Service Worker ─────────────────────────────────
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

@@ -13,9 +13,10 @@ import StaffAttendance from './StaffAttendance';
 import TrainerAssignments from './TrainerAssignments';
 import TrainerHub from './TrainerHub';
 
-// ── Create Login Modal ─────────────────────────────────────────
+// ── Create / Update Login Modal ────────────────────────────────
 function CreateLoginModal({ staff, onClose, onSuccess }) {
-  const { user } = useAuthStore();
+  // If staff already has a profile_id, we're in "update" (reset) mode
+  const isUpdate = !!staff.profile_id;
   const [form,    setForm]    = useState({ email: staff.email || '', password: '' });
   const [saving,  setSaving]  = useState(false);
   const [visible, setVisible] = useState(false);
@@ -28,10 +29,13 @@ function CreateLoginModal({ staff, onClose, onSuccess }) {
   };
 
   const save = async () => {
-    if (!form.email.trim() || !form.password.trim()) { toast.error('Email and password required'); return; }
+    if (!form.email.trim()) { toast.error('Email is required'); return; }
+    if (!form.password.trim()) { toast.error('Password is required (min 8 characters)'); return; }
+    if (form.password.length < 8) { toast.error('Password must be at least 8 characters'); return; }
     setSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Session expired — please log in again.');
       const res = await fetch('https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/create-staff-login', {
         method: 'POST',
         headers: {
@@ -39,11 +43,15 @@ function CreateLoginModal({ staff, onClose, onSuccess }) {
           'Content-Type': 'application/json',
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ staff_id: staff.id, email: form.email, password: form.password, full_name: staff.full_name }),
+        body: JSON.stringify({ staff_id: staff.id, email: form.email.trim(), password: form.password, full_name: staff.full_name }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
-      toast.success('Login created! Share credentials with staff.');
+      if (!res.ok) throw new Error(data.error || 'Failed to save login');
+      if (data.updated) {
+        toast.success('Login updated! Share new credentials with staff.');
+      } else {
+        toast.success('Login created! Share credentials with staff.');
+      }
       onSuccess();
     } catch (e) { toast.error(e.message); }
     finally { setSaving(false); }
@@ -57,14 +65,20 @@ function CreateLoginModal({ staff, onClose, onSuccess }) {
             <div className="w-9 h-9 rounded-xl bg-primary-600/20 flex items-center justify-center">
               <KeyRound className="w-4 h-4 text-primary-400" />
             </div>
-            <h2 className="text-white font-bold">Create Staff Login</h2>
+            <h2 className="text-white font-bold">
+              {isUpdate ? 'Update Staff Login' : 'Create Staff Login'}
+            </h2>
           </div>
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
         </div>
         <div className="p-6 space-y-4">
-          <div className="p-3 bg-primary-500/10 border border-primary-500/20 rounded-xl text-xs text-primary-300">
-            <p className="font-semibold mb-1">🔐 What happens:</p>
-            <p>A secure login account will be created for <strong>{staff.full_name}</strong>. Share the email &amp; password with them — they'll log in at the same URL with a staff-specific dashboard.</p>
+          <div className={`p-3 border rounded-xl text-xs ${isUpdate ? 'bg-amber-500/10 border-amber-500/20 text-amber-300' : 'bg-primary-500/10 border-primary-500/20 text-primary-300'}`}>
+            <p className="font-semibold mb-1">{isUpdate ? '🔄 Updating credentials:' : '🔐 What happens:'}</p>
+            <p>
+              {isUpdate
+                ? <>This will <strong>reset the password</strong> for <strong>{staff.full_name}</strong>. The existing login account will be updated with the new email &amp; password you set.</>  
+                : <>A secure login account will be created for <strong>{staff.full_name}</strong>. Share the email &amp; password with them — they'll log in at the same URL with a staff-specific dashboard.</>}
+            </p>
           </div>
           <div>
             <label className="label">Login Email *</label>
@@ -72,7 +86,7 @@ function CreateLoginModal({ staff, onClose, onSuccess }) {
               className="input-field" type="email" placeholder="staff@email.com" />
           </div>
           <div>
-            <label className="label">Password *</label>
+            <label className="label">{isUpdate ? 'New Password *' : 'Password *'}</label>
             <div className="relative">
               <input value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
                 className="input-field pr-24" type={visible ? 'text' : 'password'}
@@ -89,7 +103,7 @@ function CreateLoginModal({ staff, onClose, onSuccess }) {
           </div>
           {form.password && visible && (
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-              <p className="text-xs text-emerald-400 font-semibold">Save these credentials:</p>
+              <p className="text-xs text-emerald-400 font-semibold">📋 Save these credentials:</p>
               <p className="text-white text-sm font-mono mt-1">{form.email}</p>
               <p className="text-white text-sm font-mono">{form.password}</p>
             </div>
@@ -98,8 +112,10 @@ function CreateLoginModal({ staff, onClose, onSuccess }) {
             <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
             <button onClick={save} disabled={saving}
               className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50">
-              {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <KeyRound className="w-4 h-4" />}
-              {saving ? 'Creating…' : 'Create Login'}
+              {saving
+                ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                : <KeyRound className="w-4 h-4" />}
+              {saving ? (isUpdate ? 'Updating…' : 'Creating…') : (isUpdate ? 'Update Login' : 'Create Login')}
             </button>
           </div>
         </div>
@@ -329,13 +345,19 @@ function StaffDetailDrawer({ staff, onClose, onEdit, onRefresh }) {
                 <span className={staff.status === 'active' ? 'badge-active' : 'badge-expired'}>{staff.status}</span>
               </div>
 
-              {/* Login Status + Create Login */}
+              {/* Login Status + Create / Update Login */}
               <div className="mt-4 p-3 rounded-xl border border-white/5 bg-dark-700/50">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Portal Access</p>
                 {staff.profile_id ? (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                    <span className="text-emerald-400 text-sm font-medium">Login Active</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <span className="text-emerald-400 text-sm font-medium">Login Active</span>
+                    </div>
+                    <button onClick={() => setShowLoginModal(true)}
+                      className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1.5 mt-1">
+                      <KeyRound className="w-3.5 h-3.5" /> Reset / Update Password
+                    </button>
                   </div>
                 ) : (
                   <div className="space-y-2">
