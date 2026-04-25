@@ -30,7 +30,7 @@ export default function LoginPage() {
       const routes = {
         super_admin: '/super-admin',
         gym_owner:   '/',
-        staff:       '/staff/dashboard',
+        staff:       '/staff-portal/dashboard',
         member:      '/member/dashboard',
       };
       navigate(routes[result.role] || '/');

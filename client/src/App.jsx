@@ -185,14 +185,14 @@ export default function App() {
 
         {/* ── Staff Portal ── */}
         <Route
-          path="/staff"
+          path="/staff-portal"
           element={
             <PrivateRoute roles={['staff']}>
               <StaffLayout />
             </PrivateRoute>
           }
         >
-          <Route index element={<Navigate to="/staff/dashboard" replace />} />
+          <Route index element={<Navigate to="/staff-portal/dashboard" replace />} />
           <Route path="dashboard"  element={<StaffDashboard />} />
           <Route path="members"    element={<StaffMembersPage />} />
           <Route path="attendance" element={<StaffAttendancePage />} />

@@ -7,10 +7,10 @@ import {
 import useAuthStore from '../../store/authStore';
 
 const NAV_ITEMS = [
-  { to: '/staff/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/staff/members',   label: 'My Members', icon: Users },
-  { to: '/staff/attendance',label: 'Attendance', icon: Clock },
-  { to: '/staff/profile',   label: 'Profile',    icon: UserCog },
+  { to: '/staff-portal/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/staff-portal/members',   label: 'My Members', icon: Users },
+  { to: '/staff-portal/attendance',label: 'Attendance', icon: Clock },
+  { to: '/staff-portal/profile',   label: 'Profile',    icon: UserCog },
 ];
 
 export default function StaffLayout() {

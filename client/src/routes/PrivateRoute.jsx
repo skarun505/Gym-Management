@@ -41,7 +41,7 @@ export default function PrivateRoute({ children, roles, redirectTo = '/login' })
     const homeByRole = {
       super_admin: '/super-admin',
       gym_owner: '/',
-      staff: '/staff/dashboard',
+      staff: '/staff-portal/dashboard',
       member: '/member/dashboard',
     };
     return <Navigate to={homeByRole[user.role] || '/'} replace />;
