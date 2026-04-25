@@ -27,12 +27,18 @@ const useAuthStore = create((set, get) => ({
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
 
-      // Fetch full profile (role, gym_id, gym theme)
-      const { data: profile, error: profileError } = await supabase
+      // Fetch full profile with timeout guard (prevents infinite hang from RLS loops)
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Login timed out. Please try again.')), 10000)
+      );
+
+      const profileFetch = supabase
         .from('profiles')
         .select('*, gyms(id, name, theme_color, logo_url, gym_code, owner_name, phone, address, plan, status)')
         .eq('id', data.user.id)
         .single();
+
+      const { data: profile, error: profileError } = await Promise.race([profileFetch, timeout]);
 
       if (profileError) throw profileError;
 
