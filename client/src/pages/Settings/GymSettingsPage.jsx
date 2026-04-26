@@ -8,6 +8,9 @@ import {
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { usePlanGate, PLAN_CONFIG, FEATURE_LABELS } from '../../hooks/usePlanGate';
+import { PlanBadge } from '../../components/PlanGate';
+import { MessageCircle, Zap, Star, Crown, Check, X as XIcon } from 'lucide-react';
 
 // ── Preset theme colours ──────────────────────────────────────
 const THEME_PRESETS = [
@@ -670,6 +673,96 @@ function DangerZoneTab({ gym }) {
   );
 }
 
+// ── Your Plan Tab ─────────────────────────────────────────────
+const WHATSAPP = 'https://wa.me/919585495862?text=Hi%2C%20I%20want%20to%20upgrade%20my%20gym%20plan';
+
+function PlanTab({ gym }) {
+  const { plan, planLabel, planPrice, trialDaysLeft, planDaysLeft, config } = usePlanGate();
+
+  const PLAN_GRADIENT = {
+    trial:   'from-amber-600 to-amber-500',
+    starter: 'from-blue-600 to-cyan-500',
+    pro:     'from-violet-600 to-purple-500',
+    elite:   'from-amber-500 to-orange-500',
+  };
+  const PlanIcon = { starter: Zap, pro: Star, elite: Crown, trial: Zap }[plan] || Zap;
+
+  return (
+    <div className="space-y-6">
+      {/* Current plan card */}
+      <div className={`p-5 rounded-2xl border border-white/10 flex items-center gap-5 bg-gradient-to-br ${PLAN_GRADIENT[plan]} bg-opacity-10`}
+        style={{ background: `linear-gradient(135deg, rgba(124,58,237,0.12), rgba(99,102,241,0.08))` }}>
+        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br ${PLAN_GRADIENT[plan]}`}>
+          <PlanIcon className="w-7 h-7 text-white" />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Current Plan</p>
+          <p className="text-white text-2xl font-bold mt-0.5">{planLabel}</p>
+          {planPrice > 0 && <p className="text-gray-400 text-sm">₹{planPrice.toLocaleString('en-IN')}/month</p>}
+          {plan === 'trial' && trialDaysLeft !== null && (
+            <p className={`text-sm font-medium mt-1 ${trialDaysLeft <= 3 ? 'text-red-400' : 'text-amber-400'}`}>
+              ⏰ Trial ends in {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''}
+            </p>
+          )}
+          {plan !== 'trial' && planDaysLeft !== null && gym?.plan_expires_at && (
+            <p className={`text-sm font-medium mt-1 ${planDaysLeft <= 7 ? 'text-red-400' : 'text-gray-400'}`}>
+              📅 Valid until {new Date(gym.plan_expires_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </p>
+          )}
+        </div>
+        <PlanBadge plan={plan} small />
+      </div>
+
+      {/* Feature access grid */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Feature Access</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {Object.entries(FEATURE_LABELS).map(([key, { label, requiredPlan }]) => {
+            const hasAccess = config.features[key];
+            return (
+              <div
+                key={key}
+                className={`flex items-center gap-3 p-3 rounded-xl border ${hasAccess ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-white/5 bg-white/2 opacity-60'}`}
+              >
+                {hasAccess
+                  ? <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  : <XIcon className="w-4 h-4 text-gray-600 flex-shrink-0" />}
+                <span className={`text-sm ${hasAccess ? 'text-white' : 'text-gray-500'}`}>{label}</span>
+                {!hasAccess && (
+                  <span className="ml-auto text-[10px] font-semibold text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full capitalize">
+                    {requiredPlan}+
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Upgrade CTA */}
+      {plan !== 'elite' && (
+        <div className="card border border-violet-500/20 bg-violet-500/5 space-y-3">
+          <p className="text-white font-semibold">Want more features?</p>
+          <p className="text-gray-400 text-sm">
+            Upgrade to <span className="text-violet-400 font-semibold">Pro (₹999/mo)</span> or{' '}
+            <span className="text-amber-400 font-semibold">Elite (₹1,999/mo)</span> to unlock Revenue, Reports, Inventory, and more.
+          </p>
+          <a
+            href={WHATSAPP}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-2 w-full justify-center py-2.5 rounded-xl font-semibold text-white text-sm"
+            style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)' }}
+          >
+            <MessageCircle className="w-4 h-4" />
+            Upgrade via WhatsApp
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Settings Page ────────────────────────────────────────
 export default function GymSettingsPage() {
   const { user } = useAuthStore();
@@ -690,11 +783,12 @@ export default function GymSettingsPage() {
   }, [user?.gym_id]);
 
   const tabs = [
-    { key: 'profile',  label: 'Gym Profile',        icon: Building2    },
-    { key: 'theme',    label: 'Theme & Branding',    icon: Palette      },
-    { key: 'plans',    label: 'Subscription Plans',  icon: CreditCard   },
-    { key: 'access',   label: 'Access Control',      icon: Shield       },
-    { key: 'danger',   label: 'Info & Danger',       icon: AlertTriangle },
+    { key: 'plan',     label: 'Your Plan',           icon: CreditCard   },
+    { key: 'profile',  label: 'Gym Profile',          icon: Building2    },
+    { key: 'theme',    label: 'Theme & Branding',     icon: Palette      },
+    { key: 'plans',    label: 'Subscription Plans',   icon: CreditCard   },
+    { key: 'access',   label: 'Access Control',       icon: Shield       },
+    { key: 'danger',   label: 'Info & Danger',        icon: AlertTriangle },
   ];
 
   if (loading) {
@@ -732,6 +826,9 @@ export default function GymSettingsPage() {
 
       {/* Tab Content */}
       <div className="card">
+        {tab === 'plan' && gym && (
+          <PlanTab gym={gym} />
+        )}
         {tab === 'profile' && gym && (
           <GymProfileTab gym={gym} onUpdated={setGym} />
         )}

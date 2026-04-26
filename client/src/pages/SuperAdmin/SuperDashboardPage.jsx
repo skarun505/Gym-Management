@@ -29,13 +29,22 @@ function StatCard({ label, value, sub, icon: Icon, gradient, glow, loading, onCl
 
 // ── Mini Bar ──────────────────────────────────────────────────
 function MiniBar({ value, max, color }) {
-  const pct = max > 0 ? (value / max) * 100 : 0;
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
     <div className="flex-1 bg-dark-600 rounded-full h-1.5">
       <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
+
+// ── Plan-based member limits ───────────────────────────────────
+const PLAN_LIMITS = {
+  trial:   50,
+  starter: 50,
+  pro:     300,
+  elite:   Infinity,
+};
+const memberLimit = (plan) => PLAN_LIMITS[plan] ?? 50;
 
 export default function SuperDashboardPage() {
   const navigate = useNavigate();
@@ -87,11 +96,11 @@ export default function SuperDashboardPage() {
           const d = Math.ceil((new Date(s.end_date) - new Date()) / 86400000);
           return d <= 7 && d >= 0;
         }).length,
-        planBreakdown: {
-          trial:      gymsData.filter(g => g.plan === 'trial').length,
-          basic:      gymsData.filter(g => g.plan === 'basic').length,
-          pro:        gymsData.filter(g => g.plan === 'pro').length,
-          enterprise: gymsData.filter(g => g.plan === 'enterprise').length,
+      planBreakdown: {
+          trial:   gymsData.filter(g => g.plan === 'trial').length,
+          starter: gymsData.filter(g => g.plan === 'starter').length,
+          pro:     gymsData.filter(g => g.plan === 'pro').length,
+          elite:   gymsData.filter(g => g.plan === 'elite').length,
         },
       });
     } catch (err) {
@@ -104,10 +113,10 @@ export default function SuperDashboardPage() {
   useEffect(() => { fetchAll(); }, []);
 
   const planColors = {
-    trial:      { badge: 'badge-pending',  bar: 'bg-amber-500' },
-    basic:      { badge: 'badge-active',   bar: 'bg-emerald-500' },
-    pro:        { badge: 'badge-admin',    bar: 'bg-violet-500' },
-    enterprise: { badge: 'badge-trainer',  bar: 'bg-blue-500' },
+    trial:   { badge: 'badge-pending', bar: 'bg-amber-500'  },
+    starter: { badge: 'badge-active',  bar: 'bg-emerald-500' },
+    pro:     { badge: 'badge-admin',   bar: 'bg-violet-500'  },
+    elite:   { badge: 'badge-trainer', bar: 'bg-blue-500'    },
   };
 
   const statusColors = {
@@ -256,9 +265,15 @@ export default function SuperDashboardPage() {
                   <td>
                     <div className="flex items-center gap-2">
                       <span className="text-white font-semibold">{gym.memberCount}</span>
-                      <span className="text-gray-500 text-xs">/ {gym.max_members}</span>
+                      <span className="text-gray-500 text-xs">
+                        / {memberLimit(gym.plan) === Infinity ? '∞' : memberLimit(gym.plan)}
+                      </span>
                       <div style={{ width: 40 }}>
-                        <MiniBar value={gym.memberCount} max={gym.max_members} color="bg-emerald-500" />
+                        <MiniBar
+                          value={gym.memberCount}
+                          max={memberLimit(gym.plan) === Infinity ? Math.max(gym.memberCount, 1) : memberLimit(gym.plan)}
+                          color={gym.memberCount >= memberLimit(gym.plan) ? 'bg-red-500' : 'bg-emerald-500'}
+                        />
                       </div>
                     </div>
                   </td>

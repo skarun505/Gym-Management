@@ -11,6 +11,8 @@ import {
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { usePlanGate } from '../../hooks/usePlanGate';
+import { UpgradeWall } from '../../components/PlanGate';
 
 const COLORS = ['#a21cce', '#10b981', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6'];
 
@@ -34,6 +36,7 @@ const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 
 export default function RevenuePage() {
   const { user } = useAuthStore();
+  const { canAccess, plan } = usePlanGate();
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState({});
   const [monthlyRevenue, setMonthlyRevenue] = useState([]);
@@ -44,6 +47,9 @@ export default function RevenuePage() {
   const [period, setPeriod] = useState('6m'); // '1m' | '3m' | '6m' | '12m' | 'custom'
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo]   = useState('');
+
+  // ── Plan gate (all hooks must be above this) ──────────────────────────────
+  if (!canAccess('revenue')) return <UpgradeWall feature="revenue" currentPlan={plan} />;
 
   const fetchAll = async () => {
     if (!user?.gym_id) return;
@@ -557,7 +563,9 @@ export default function RevenuePage() {
                 </div>
                 <div>
                   <p className="text-white font-medium text-sm">{p.member_name}</p>
-                  <p className="text-gray-500 text-xs">{p.payment_date} · {p.payment_method?.replace('_', ' ')}</p>
+                  <p className="text-gray-500 text-xs">
+                    {p.payment_date} · {p.notes ? p.notes : p.payment_method?.replace('_', ' ')}
+                  </p>
                 </div>
               </div>
               <span className="text-emerald-400 font-bold">+₹{Number(p.amount_paid).toLocaleString('en-IN')}</span>

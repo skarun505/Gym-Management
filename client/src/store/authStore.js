@@ -41,7 +41,7 @@ async function fetchProfile(userId) {
   if (profile.gym_id) {
     const { data: gymData } = await supabase
       .from('gyms')
-      .select('id, name, theme_color, logo_url, gym_code, owner_name, phone, address, plan, status')
+      .select('id, name, theme_color, logo_url, gym_code, owner_name, phone, address, plan, plan_expires_at, monthly_price, status')
       .eq('id', profile.gym_id)
       .maybeSingle();
     gym = gymData || null;

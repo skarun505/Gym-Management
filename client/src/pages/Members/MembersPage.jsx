@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
-import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw, Camera, Loader2, AlertTriangle, Bell, Check } from 'lucide-react';
+import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw, Camera, Loader2, AlertTriangle, Bell, Check, Lock } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { usePlanGate } from '../../hooks/usePlanGate';
+import { UpgradeModal } from '../../components/PlanGate';
 
 const CREATE_LOGIN_URL = 'https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/create-member-login';
 
@@ -413,6 +415,18 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
         }).select().single();
         if (error) throw error;
         memberId = newMember.id;
+
+        // 💰 Record admission fee as revenue (fee_payments) if entered
+        if (data.admission_fee && Number(data.admission_fee) > 0) {
+          await supabase.from('fee_payments').insert({
+            gym_id:         gymId,
+            member_id:      memberId,
+            amount_paid:    Number(data.admission_fee),
+            payment_date:   data.joined_at || new Date().toISOString().split('T')[0],
+            payment_method: 'cash',
+            notes:          'Admission Fee',
+          });
+        }
 
         // Optionally assign subscription plan
         if (showPlanSection && data.plan_id && data.start_date && data.end_date) {
@@ -850,6 +864,8 @@ export default function MembersPage() {
   const [loginTarget,  setLoginTarget]  = useState(null); // member object for CreateLoginModal
   const [credentials,  setCredentials]  = useState(null); // response from edge fn → CredentialsModal
   const { user } = useAuthStore();
+  const { canAccess: _canAccess, isAtMemberLimit, maxMembers, plan } = usePlanGate();
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   const fetchMembers = async () => {
     if (!user?.gym_id) return;
@@ -902,8 +918,19 @@ export default function MembersPage() {
           <h1 className="page-title">Members</h1>
           <p className="page-subtitle">{members.length} member{members.length !== 1 ? 's' : ''} found</p>
         </div>
-        <button onClick={() => setModalMember(null)} className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Add Member
+        <button
+          onClick={() => {
+            if (isAtMemberLimit(members.length)) {
+              setShowUpgrade(true);
+            } else {
+              setModalMember(null);
+            }
+          }}
+          className="btn-primary flex items-center gap-2"
+        >
+          {isAtMemberLimit(members.length)
+            ? <><Lock className="w-4 h-4" /> Limit Reached</>
+            : <><Plus className="w-4 h-4" /> Add Member</>}
         </button>
       </div>
 
@@ -1099,6 +1126,15 @@ export default function MembersPage() {
         <CredentialsModal
           creds={credentials}
           onClose={() => setCredentials(null)}
+        />
+      )}
+
+      {/* Member limit upgrade modal */}
+      {showUpgrade && (
+        <UpgradeModal
+          feature="members"
+          currentPlan={plan}
+          onClose={() => setShowUpgrade(false)}
         />
       )}
     </div>

@@ -7,6 +7,8 @@ import {
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { usePlanGate } from '../../hooks/usePlanGate';
+import { UpgradeWall } from '../../components/PlanGate';
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload?.length) {
@@ -27,6 +29,10 @@ export default function ReportsPage() {
   const [topMembers, setTopMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuthStore();
+  const { canAccess, plan } = usePlanGate();
+
+  // ── Plan gate ─────────────────────────────────────────────────────────
+  if (!canAccess('reports')) return <UpgradeWall feature="reports" currentPlan={plan} />;
 
   useEffect(() => {
     if (!user?.gym_id) return;

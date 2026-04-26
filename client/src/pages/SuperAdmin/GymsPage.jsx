@@ -7,6 +7,11 @@ import {
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
+// ── Plan-based member limits ───────────────────────────────────
+const PLAN_LIMITS = { trial: 50, starter: 50, pro: 300, elite: Infinity };
+const memberLimit = (plan) => PLAN_LIMITS[plan] ?? 50;
+const memberLimitLabel = (plan) => memberLimit(plan) === Infinity ? '∞' : memberLimit(plan);
+
 // ── Utility: generate a random password ─────────────────────
 function generatePassword(length = 12) {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!';
@@ -216,12 +221,13 @@ function ResetOwnerPasswordModal({ gym, onClose }) {
 // ── Edit Gym Modal ────────────────────────────────────────────
 function EditGymModal({ gym, onClose, onSaved }) {
   const [form, setForm] = useState({
-    name:       gym.name || '',
-    owner_name: gym.owner_name || '',
-    phone:      gym.phone || '',
-    address:    gym.address || '',
-    plan:       gym.plan || 'trial',
-    theme_color: gym.theme_color || '#a21cce',
+    name:         gym.name || '',
+    owner_name:   gym.owner_name || '',
+    phone:        gym.phone || '',
+    address:      gym.address || '',
+    plan:         gym.plan || 'trial',
+    plan_expires_at: gym.plan_expires_at ? gym.plan_expires_at.split('T')[0] : '',
+    theme_color:  gym.theme_color || '#a21cce',
   });
   const [saving, setSaving] = useState(false);
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
@@ -233,13 +239,16 @@ function EditGymModal({ gym, onClose, onSaved }) {
     }
     setSaving(true);
     try {
+      const PLAN_PRICE = { trial: 0, starter: 499, pro: 999, elite: 1999 };
       const { error } = await supabase.from('gyms').update({
-        name:        form.name,
-        owner_name:  form.owner_name,
-        phone:       form.phone,
-        address:     form.address,
-        plan:        form.plan,
-        theme_color: form.theme_color,
+        name:            form.name,
+        owner_name:      form.owner_name,
+        phone:           form.phone,
+        address:         form.address,
+        plan:            form.plan,
+        plan_expires_at: form.plan_expires_at || null,
+        monthly_price:   PLAN_PRICE[form.plan] || 0,
+        theme_color:     form.theme_color,
       }).eq('id', gym.id);
       if (error) throw error;
       toast.success(`${form.name} updated!`);
@@ -301,13 +310,23 @@ function EditGymModal({ gym, onClose, onSaved }) {
                 <label className="label">Subscription Plan</label>
                 <div className="relative">
                   <select value={form.plan} onChange={e => set('plan', e.target.value)} className="input-field appearance-none pr-8">
-                    <option value="trial">Trial (30 days)</option>
-                    <option value="basic">Basic</option>
-                    <option value="pro">Pro</option>
-                    <option value="enterprise">Enterprise</option>
+                    <option value="trial">🆓 Trial (14 days free)</option>
+                    <option value="starter">🥉 Starter — ₹499/mo</option>
+                    <option value="pro">⭐ Pro — ₹999/mo (Popular)</option>
+                    <option value="elite">👑 Elite — ₹1,999/mo</option>
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 </div>
+              </div>
+              <div>
+                <label className="label">Plan Expiry Date</label>
+                <input
+                  type="date"
+                  value={form.plan_expires_at}
+                  onChange={e => set('plan_expires_at', e.target.value)}
+                  className="input-field"
+                  placeholder="Leave empty for trial"
+                />
               </div>
               <div>
                 <label className="label">Brand Color (theme)</label>
@@ -355,12 +374,13 @@ function EditGymModal({ gym, onClose, onSaved }) {
 // ── Create Gym Modal ──────────────────────────────────────────
 function CreateGymModal({ onClose, onCreated }) {
   const [form, setForm] = useState({
-    name: '',
-    owner_name: '',
-    email: '',
-    phone: '',
-    address: '',
-    plan: 'trial',
+    name:        '',
+    owner_name:  '',
+    email:       '',
+    phone:       '',
+    address:     '',
+    plan:        'trial',
+    plan_expires_at: '',
     theme_color: '#a21cce',
   });
   const [password, setPassword] = useState(generatePassword());
@@ -391,14 +411,15 @@ function CreateGymModal({ onClose, onCreated }) {
             'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({
-            gymName: form.name,
-            ownerName: form.owner_name,
-            email: form.email,
+            gymName:       form.name,
+            ownerName:     form.owner_name,
+            email:         form.email,
             password,
-            phone: form.phone,
-            address: form.address,
-            plan: form.plan,
-            themeColor: form.theme_color,
+            phone:         form.phone,
+            address:       form.address,
+            plan:          form.plan,
+            planExpiresAt: form.plan_expires_at || null,
+            themeColor:    form.theme_color,
           }),
         }
       );
@@ -530,13 +551,23 @@ function CreateGymModal({ onClose, onCreated }) {
                     onChange={e => set('plan', e.target.value)}
                     className="input-field appearance-none pr-8"
                   >
-                    <option value="trial">Trial (30 days)</option>
-                    <option value="basic">Basic</option>
-                    <option value="pro">Pro</option>
-                    <option value="enterprise">Enterprise</option>
+                    <option value="trial">🆓 Trial (14 days free)</option>
+                    <option value="starter">🥉 Starter — ₹499/mo</option>
+                    <option value="pro">⭐ Pro — ₹999/mo (Popular)</option>
+                    <option value="elite">👑 Elite — ₹1,999/mo</option>
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 </div>
+              </div>
+              <div>
+                <label className="label">Plan Expiry Date</label>
+                <input
+                  type="date"
+                  value={form.plan_expires_at}
+                  onChange={e => set('plan_expires_at', e.target.value)}
+                  className="input-field"
+                  placeholder="Leave empty for trial"
+                />
               </div>
               <div>
                 <label className="label">Brand Color (theme)</label>
@@ -630,10 +661,10 @@ export default function GymsPage() {
   };
 
   const planColors = {
-    trial: 'badge-pending',
-    basic: 'badge-active',
-    pro: 'badge-admin',
-    enterprise: 'badge-trainer',
+    trial:   'badge-pending',
+    starter: 'badge-active',
+    pro:     'badge-admin',
+    elite:   'badge-trainer',
   };
 
   const statusColors = {
@@ -735,7 +766,7 @@ export default function GymsPage() {
                     <span className="text-white font-semibold">
                       {gym.members?.[0]?.count ?? 0}
                     </span>
-                    <span className="text-gray-500 text-xs"> / {gym.max_members}</span>
+                    <span className="text-gray-500 text-xs"> / {memberLimitLabel(gym.plan)}</span>
                   </td>
                   <td>
                     <span className={planColors[gym.plan] || 'badge'}>

@@ -1,7 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Zap, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Zap, ArrowRight, Download, Smartphone, Share2 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
+
+// ── PWA helpers ─────────────────────────────────────────────────
+function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream; }
+function isStandalone() {
+  return window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches;
+}
 
 // Floating pill tags that drift across the background
 const PILLS = [
@@ -20,6 +27,38 @@ export default function LoginPage() {
   const [focused,    setFocused]    = useState('');
   const { login, isLoading, error } = useAuthStore();
   const navigate = useNavigate();
+
+  // PWA install state
+  const deferredPrompt = useRef(null);
+  const [installState, setInstallState] = useState('hidden'); // 'hidden' | 'ready' | 'ios' | 'installing' | 'done'
+  const [showIosGuide, setShowIosGuide] = useState(false);
+
+  useEffect(() => {
+    if (isStandalone()) return; // already installed
+    if (isIOS()) { setInstallState('ios'); return; }
+
+    const handler = (e) => {
+      e.preventDefault();
+      deferredPrompt.current = e;
+      setInstallState('ready');
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('appinstalled', () => setInstallState('done'));
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstall = async () => {
+    if (installState === 'ios') { setShowIosGuide(g => !g); return; }
+    if (!deferredPrompt.current) return;
+    setInstallState('installing');
+    try {
+      await deferredPrompt.current.prompt();
+      const { outcome } = await deferredPrompt.current.userChoice;
+      if (outcome === 'accepted') setInstallState('done');
+      else setInstallState('ready');
+    } catch { setInstallState('ready'); }
+    deferredPrompt.current = null;
+  };
 
   const isPhone = identifier.trim() !== '' && !identifier.includes('@');
 
@@ -155,6 +194,60 @@ export default function LoginPage() {
             )}
           </button>
         </form>
+
+        {/* ── PWA Install Button ── */}
+        {installState !== 'hidden' && installState !== 'done' && (
+          <div style={{ width: '100%', marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={handleInstall}
+              style={{
+                ...styles.installBtn,
+                ...(installState === 'ready' ? styles.installBtnReady : {}),
+                cursor: installState === 'installing' ? 'not-allowed' : 'pointer',
+                opacity: installState === 'installing' ? 0.75 : 1,
+              }}
+            >
+              {installState === 'installing' ? (
+                <><span style={styles.spinner} /><span>Installing…</span></>
+              ) : installState === 'ios' ? (
+                <><Share2 size={15} /><span>{showIosGuide ? 'Hide Guide' : '📱 Add to Home Screen'}</span></>
+              ) : (
+                <><Download size={15} /><span>Install App</span></>
+              )}
+            </button>
+
+            {/* iOS step-by-step guide */}
+            {installState === 'ios' && showIosGuide && (
+              <div style={styles.iosGuide}>
+                <p style={styles.iosGuideTitle}>How to install on iPhone / iPad:</p>
+                {[
+                  { n: 1, text: 'Tap the Share button (□↑) in Safari's bottom bar' },
+                  { n: 2, text: 'Scroll down and tap "Add to Home Screen"' },
+                  { n: 3, text: 'Tap "Add" — done! 🎉' },
+                ].map(({ n, text }) => (
+                  <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: n > 1 ? 8 : 0 }}>
+                    <div style={styles.stepDot}>{n}</div>
+                    <p style={{ color: '#d1d5db', fontSize: 12, margin: 0, lineHeight: 1.5 }}>{text}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Install ready glow label */}
+            {installState === 'ready' && (
+              <p style={{ textAlign: 'center', color: 'rgba(196,132,252,0.6)', fontSize: 11, margin: '6px 0 0', fontWeight: 500 }}>
+                ✨ One click — no app store needed!
+              </p>
+            )}
+          </div>
+        )}
+
+        {installState === 'done' && (
+          <p style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: '#10b981', fontWeight: 600 }}>
+            ✓ GymPro installed on your device!
+          </p>
+        )}
 
         {/* Footer */}
         <p style={styles.footer}>
@@ -433,5 +526,51 @@ const styles = {
     color: 'rgba(255,255,255,0.2)',
     fontWeight: 500,
     textAlign: 'center',
+  },
+
+  // PWA install button
+  installBtn: {
+    width: '100%',
+    padding: '12px 18px',
+    borderRadius: 12,
+    border: '1.5px solid rgba(162,28,206,0.35)',
+    background: 'rgba(162,28,206,0.08)',
+    color: 'rgba(196,132,252,0.85)',
+    fontSize: 14,
+    fontWeight: 700,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+    transition: 'all 0.2s',
+  },
+  installBtnReady: {
+    background: 'rgba(162,28,206,0.18)',
+    border: '1.5px solid rgba(162,28,206,0.6)',
+    color: '#d878f0',
+    boxShadow: '0 0 18px rgba(162,28,206,0.3)',
+  },
+  iosGuide: {
+    marginTop: 12,
+    padding: '14px 16px',
+    borderRadius: 12,
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.08)',
+  },
+  iosGuideTitle: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    margin: '0 0 10px',
+  },
+  stepDot: {
+    minWidth: 20, height: 20,
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg,#a21cce,#f97316)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 10, fontWeight: 800, color: '#fff', flexShrink: 0,
   },
 };

@@ -3,6 +3,8 @@ import { Megaphone, Plus, X, Trash2, AlertTriangle, Info, Zap, Bell, Edit2, Save
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { usePlanGate } from '../../hooks/usePlanGate';
+import { UpgradeWall } from '../../components/PlanGate';
 
 const PRIORITY_CONFIG = {
   low:    { label: 'Low',    color: 'text-gray-400',   bg: 'bg-gray-500/10',   border: 'border-gray-500/20', icon: Info },
@@ -260,12 +262,16 @@ function ChallengeModal({ gymId, onClose, onSave }) {
 
 export default function AnnouncementsPage() {
   const { user } = useAuthStore();
+  const { canAccess, plan } = usePlanGate();
   const [announcements, setAnnouncements] = useState([]);
   const [challenges,    setChallenges]    = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [showModal,     setShowModal]     = useState(false);
   const [showChallenge, setShowChallenge] = useState(false);
   const [editTarget,    setEditTarget]    = useState(null);
+
+  // ── Plan gate ─────────────────────────────────────────────────────────
+  if (!canAccess('announcements')) return <UpgradeWall feature="announcements" currentPlan={plan} />;
 
   const fetchAll = async () => {
     if (!user?.gym_id) return;

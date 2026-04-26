@@ -8,6 +8,8 @@ import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { usePlanGate } from '../../hooks/usePlanGate';
+import { UpgradeWall } from '../../components/PlanGate';
 import ShiftsManager from './ShiftsManager';
 import StaffAttendance from './StaffAttendance';
 import TrainerAssignments from './TrainerAssignments';
@@ -395,6 +397,10 @@ export default function StaffPage() {
   const [modalStaff, setModalStaff] = useState(undefined);
   const [detailStaff, setDetailStaff] = useState(null);
   const { user } = useAuthStore();
+  const { canAccess, plan } = usePlanGate();
+
+  // ── Plan gate ─────────────────────────────────────────────────────────
+  if (!canAccess('staff')) return <UpgradeWall feature="staff" currentPlan={plan} />;
 
   const fetchStaff = async () => {
     if (!user?.gym_id) return;

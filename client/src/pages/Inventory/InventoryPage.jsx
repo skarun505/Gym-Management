@@ -4,6 +4,8 @@ import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { usePlanGate } from '../../hooks/usePlanGate';
+import { UpgradeWall } from '../../components/PlanGate';
 
 const CONDITION_STYLES = {
   good: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
@@ -114,6 +116,10 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [modalItem, setModalItem] = useState(undefined);
   const { user } = useAuthStore();
+  const { canAccess, plan } = usePlanGate();
+
+  // ── Plan gate ─────────────────────────────────────────────────────────
+  if (!canAccess('inventory')) return <UpgradeWall feature="inventory" currentPlan={plan} />;
 
   const fetchAll = async () => {
     if (!user?.gym_id) return;
