@@ -106,14 +106,23 @@ function ResetOwnerPasswordModal({ gym, onClose }) {
     if (!password || password.length < 8) { toast.error('Min 8 characters'); return; }
     setSaving(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Session expired');
+      // Force-refresh token first
+      let accessToken = null;
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      if (refreshed?.session?.access_token) {
+        accessToken = refreshed.session.access_token;
+      } else {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) accessToken = session.access_token;
+      }
+      if (!accessToken) throw new Error('Session expired. Please log out and log in again.');
+
       const res = await fetch(
         'https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/reset-owner-password',
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${session.access_token}`,
+            Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
             apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
@@ -396,18 +405,31 @@ function CreateGymModal({ onClose, onCreated }) {
     }
     setSaving(true);
     try {
-      // Call Edge Function — runs server-side with admin privileges
-      // Get current session to pass auth token
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated. Please login again.');
+      // Step 1: Force-refresh session so we always have a fresh access_token
+      let accessToken = null;
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      if (refreshed?.session?.access_token) {
+        accessToken = refreshed.session.access_token;
+      } else {
+        // Fallback: try getSession (uses cached token)
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          accessToken = session.access_token;
+        }
+      }
 
+      if (!accessToken) {
+        throw new Error('Session expired. Please log out and log in again.');
+      }
+
+      // Step 2: Call Edge Function with valid token
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-gym`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
+            'Authorization': `Bearer ${accessToken}`,
             'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({
@@ -430,7 +452,7 @@ function CreateGymModal({ onClose, onCreated }) {
       toast.success(`${form.name} has been onboarded!`);
       onCreated(data.credentials);
     } catch (err) {
-      console.error(err);
+      console.error('[CreateGym]', err);
       toast.error(err.message || 'Failed to create gym');
     } finally {
       setSaving(false);
