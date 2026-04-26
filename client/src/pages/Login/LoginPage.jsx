@@ -29,27 +29,42 @@ export default function LoginPage() {
   const navigate = useNavigate();
 
   // PWA install state
+  // 'idle'       → always visible, no native prompt yet (show manual guide)
+  // 'ready'      → native beforeinstallprompt available (one-click install)
+  // 'ios'        → iOS Safari (show Add to Home Screen steps)
+  // 'installing' → waiting for user choice
+  // 'done'       → installed!
   const deferredPrompt = useRef(null);
-  const [installState, setInstallState] = useState('hidden'); // 'hidden' | 'ready' | 'ios' | 'installing' | 'done'
-  const [showIosGuide, setShowIosGuide] = useState(false);
+  const [installState, setInstallState] = useState('idle');
+  const [showGuide,    setShowGuide]    = useState(false);
 
   useEffect(() => {
-    if (isStandalone()) return; // already installed
+    // Hide entirely if already running as installed PWA
+    if (isStandalone()) { setInstallState('done'); return; }
+
+    // iOS Safari — Add to Home Screen
     if (isIOS()) { setInstallState('ios'); return; }
 
+    // Chrome/Edge/Android — listen for native prompt
     const handler = (e) => {
       e.preventDefault();
       deferredPrompt.current = e;
-      setInstallState('ready');
+      setInstallState('ready'); // upgrade to one-click
     };
     window.addEventListener('beforeinstallprompt', handler);
-    window.addEventListener('appinstalled', () => setInstallState('done'));
+    window.addEventListener('appinstalled', () => {
+      setInstallState('done');
+      deferredPrompt.current = null;
+    });
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
   const handleInstall = async () => {
-    if (installState === 'ios') { setShowIosGuide(g => !g); return; }
-    if (!deferredPrompt.current) return;
+    if (installState === 'ios' || installState === 'idle') {
+      setShowGuide(g => !g);
+      return;
+    }
+    if (!deferredPrompt.current) { setShowGuide(g => !g); return; }
     setInstallState('installing');
     try {
       await deferredPrompt.current.prompt();
@@ -195,8 +210,8 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* ── PWA Install Button ── */}
-        {installState !== 'hidden' && installState !== 'done' && (
+        {/* ── PWA Install Button ── always visible unless already installed */}
+        {installState !== 'done' && (
           <div style={{ width: '100%', marginTop: 12 }}>
             <button
               type="button"
@@ -211,30 +226,53 @@ export default function LoginPage() {
               {installState === 'installing' ? (
                 <><span style={styles.spinner} /><span>Installing…</span></>
               ) : installState === 'ios' ? (
-                <><Share2 size={15} /><span>{showIosGuide ? 'Hide Guide' : '📱 Add to Home Screen'}</span></>
+                <><Share2 size={15} /><span>{showGuide ? 'Hide Guide' : '📱 Add to Home Screen'}</span></>
+              ) : installState === 'ready' ? (
+                <><Download size={15} /><span>⚡ Install App — One Click!</span></>
               ) : (
-                <><Download size={15} /><span>Install App</span></>
+                <><Smartphone size={15} /><span>📲 Install App on Your Device</span></>
               )}
             </button>
 
-            {/* iOS step-by-step guide */}
-            {installState === 'ios' && showIosGuide && (
+            {/* Guide panel — shown on click for idle/ios/no-native-prompt */}
+            {showGuide && (
               <div style={styles.iosGuide}>
-                <p style={styles.iosGuideTitle}>How to install on iPhone / iPad:</p>
-                {[
-                  { n: 1, text: 'Tap the Share button (□↑) in Safari's bottom bar' },
-                  { n: 2, text: 'Scroll down and tap "Add to Home Screen"' },
-                  { n: 3, text: 'Tap "Add" — done! 🎉' },
-                ].map(({ n, text }) => (
-                  <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: n > 1 ? 8 : 0 }}>
-                    <div style={styles.stepDot}>{n}</div>
-                    <p style={{ color: '#d1d5db', fontSize: 12, margin: 0, lineHeight: 1.5 }}>{text}</p>
-                  </div>
-                ))}
+                {installState === 'ios' ? (
+                  <>
+                    <p style={styles.iosGuideTitle}>Install on iPhone / iPad (Safari):</p>
+                    {[
+                      { n: 1, text: 'Tap the Share button (□↑) at the bottom of Safari' },
+                      { n: 2, text: 'Scroll down and tap "Add to Home Screen"' },
+                      { n: 3, text: 'Tap "Add" in the top-right corner — done! 🎉' },
+                    ].map(({ n, text }) => (
+                      <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: n > 1 ? 8 : 0 }}>
+                        <div style={styles.stepDot}>{n}</div>
+                        <p style={{ color: '#d1d5db', fontSize: 12, margin: 0, lineHeight: 1.5 }}>{text}</p>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <p style={styles.iosGuideTitle}>Install on Android / Chrome / Edge:</p>
+                    {[
+                      { n: 1, text: 'Tap the ⋮ menu (top-right) in Chrome or Edge' },
+                      { n: 2, text: 'Tap "Add to Home screen" or "Install app"' },
+                      { n: 3, text: 'Tap "Install" to confirm — you\'re all set! 🎉' },
+                    ].map(({ n, text }) => (
+                      <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: n > 1 ? 8 : 0 }}>
+                        <div style={styles.stepDot}>{n}</div>
+                        <p style={{ color: '#d1d5db', fontSize: 12, margin: 0, lineHeight: 1.5 }}>{text}</p>
+                      </div>
+                    ))}
+                  </>
+                )}
+                <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, margin: '10px 0 0', textAlign: 'center' }}>
+                  Free · No app store · Works offline
+                </p>
               </div>
             )}
 
-            {/* Install ready glow label */}
+            {/* Native prompt hint */}
             {installState === 'ready' && (
               <p style={{ textAlign: 'center', color: 'rgba(196,132,252,0.6)', fontSize: 11, margin: '6px 0 0', fontWeight: 500 }}>
                 ✨ One click — no app store needed!
