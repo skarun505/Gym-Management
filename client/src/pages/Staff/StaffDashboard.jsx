@@ -257,8 +257,8 @@ export default function StaffDashboard() {
         </h2>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: 'Mark Attendance', icon: CheckCircle, path: '/staff/attendance', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-            { label: 'My PT Members',   icon: Users,       path: '/staff/members',    color: 'text-primary-400', bg: 'bg-primary-500/10' },
+            { label: 'Mark Attendance', icon: CheckCircle, path: '/staff-portal/attendance', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+            { label: 'Add Member',      icon: Users,       path: '/staff-portal/add-member', color: 'text-primary-400', bg: 'bg-primary-500/10' },
           ].map(({ label, icon: Icon, path, color, bg }) => (
             <button key={path} onClick={() => navigate(path)}
               className="card flex items-center gap-3 p-4 hover:border-white/20 hover:-translate-y-0.5 transition-all group text-left">

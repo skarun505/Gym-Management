@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw, Camera, Loader2, AlertTriangle, Bell, Check, Lock } from 'lucide-react';
+import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw, Camera, Loader2, AlertTriangle, Bell, Check, Lock, Clock, Timer, ChevronRight, Filter, ShieldAlert } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
@@ -416,17 +416,8 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
         if (error) throw error;
         memberId = newMember.id;
 
-        // 💰 Record admission fee as revenue (fee_payments) if entered
-        if (data.admission_fee && Number(data.admission_fee) > 0) {
-          await supabase.from('fee_payments').insert({
-            gym_id:         gymId,
-            member_id:      memberId,
-            amount_paid:    Number(data.admission_fee),
-            payment_date:   data.joined_at || new Date().toISOString().split('T')[0],
-            payment_method: 'cash',
-            notes:          'Admission Fee',
-          });
-        }
+        // 💰 Admission fee is now auto-synced to fee_payments via DB trigger
+        // (trg_sync_admission_fee) — no manual insert needed here.
 
         // Optionally assign subscription plan
         if (showPlanSection && data.plan_id && data.start_date && data.end_date) {
@@ -852,20 +843,234 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
   );
 }
 
+// ── Delete Confirm Modal ──────────────────────────────────────
+function DeleteConfirmModal({ member, onClose, onDeactivate, onPermanentDelete }) {
+  const [tab, setTab]           = useState('deactivate'); // 'deactivate' | 'permanent'
+  const [confirmText, setConfirmText] = useState('');
+  const [loading, setLoading]   = useState(false);
+
+  const nameMatches = confirmText.trim().toLowerCase() === member.full_name.trim().toLowerCase();
+
+  const handleDeactivate = async () => {
+    setLoading(true);
+    await onDeactivate(member.id);
+    setLoading(false);
+    onClose();
+  };
+
+  const handlePermanent = async () => {
+    if (!nameMatches) return;
+    setLoading(true);
+    await onPermanentDelete(member.id);
+    setLoading(false);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content max-w-md" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="p-6 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center">
+              <Trash2 className="w-5 h-5 text-red-400" />
+            </div>
+            <div>
+              <h2 className="text-white font-bold">Remove Member</h2>
+              <p className="text-gray-500 text-xs mt-0.5 truncate max-w-[240px]">{member.full_name} · {member.member_code}</p>
+            </div>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+
+        {/* Tab switcher */}
+        <div className="flex border-b border-white/5">
+          {[
+            { id: 'deactivate', label: 'Deactivate' },
+            { id: 'permanent',  label: 'Permanent Delete' },
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => { setTab(t.id); setConfirmText(''); }}
+              className={`flex-1 px-4 py-3 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+                tab === t.id
+                  ? t.id === 'permanent'
+                    ? 'border-red-500 text-red-400'
+                    : 'border-primary-500 text-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-6 space-y-5">
+
+          {/* ── Deactivate tab ── */}
+          {tab === 'deactivate' && (
+            <>
+              <div className="bg-dark-700/60 rounded-xl p-4 border border-white/5 space-y-2">
+                <p className="text-white font-semibold text-sm flex items-center gap-2">
+                  <UserX className="w-4 h-4 text-amber-400" /> Soft Deactivation
+                </p>
+                <ul className="text-gray-400 text-xs space-y-1.5 list-disc list-inside">
+                  <li>Member is marked <span className="text-amber-400 font-semibold">Inactive</span> — not deleted</li>
+                  <li>All subscription &amp; attendance history is kept</li>
+                  <li>Can be reactivated at any time from the Edit modal</li>
+                </ul>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+                <button
+                  onClick={handleDeactivate}
+                  disabled={loading}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm bg-amber-600/20 text-amber-400 border border-amber-500/30 hover:bg-amber-600/30 transition-colors disabled:opacity-50"
+                >
+                  {loading
+                    ? <div className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+                    : <UserX className="w-4 h-4" />}
+                  Deactivate
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ── Permanent Delete tab ── */}
+          {tab === 'permanent' && (
+            <>
+              <div className="bg-red-500/8 rounded-xl p-4 border border-red-500/20 space-y-2">
+                <p className="text-red-400 font-semibold text-sm flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4" /> Permanent &amp; Irreversible
+                </p>
+                <ul className="text-red-300/70 text-xs space-y-1.5 list-disc list-inside">
+                  <li>Member record is <span className="text-red-400 font-bold">permanently deleted</span></li>
+                  <li>All subscriptions, attendance &amp; linked data are wiped</li>
+                  <li>This action <span className="text-red-400 font-bold">cannot be undone</span></li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="label text-red-400">
+                  Type <span className="font-bold text-white">{member.full_name}</span> to confirm
+                </label>
+                <input
+                  value={confirmText}
+                  onChange={e => setConfirmText(e.target.value)}
+                  className="input-field mt-1 border-red-500/30 focus:border-red-500"
+                  placeholder={member.full_name}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+                <button
+                  onClick={handlePermanent}
+                  disabled={!nameMatches || loading}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  {loading
+                    ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    : <Trash2 className="w-4 h-4" />}
+                  Delete Forever
+                </button>
+              </div>
+            </>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Subscription Status Quick-Change Badge ────────────────────
+function SubStatusBadge({ sub, onChangeStatus }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  if (!sub) return <span className="text-gray-600 text-xs">No plan</span>;
+
+  const cfg = {
+    active:  { label: 'Active',  cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+    expired: { label: 'Expired', cls: 'text-red-400 bg-red-500/10 border-red-500/20' },
+    pending: { label: 'Pending', cls: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
+  };
+  const current = cfg[sub.status] || cfg.active;
+
+  const handleSelect = async (newStatus) => {
+    if (newStatus === sub.status) { setOpen(false); return; }
+    setSaving(true);
+    setOpen(false);
+    await onChangeStatus(sub.id, newStatus);
+    setSaving(false);
+  };
+
+  return (
+    <div className="relative inline-block">
+      <button
+        onClick={() => setOpen(o => !o)}
+        disabled={saving}
+        className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all hover:opacity-80 ${current.cls}`}
+        title="Click to change subscription status"
+      >
+        {saving
+          ? <div className="w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />
+          : current.label === 'Active'  ? <Check className="w-2.5 h-2.5" />
+          : current.label === 'Expired' ? <Clock className="w-2.5 h-2.5" />
+          : <Timer className="w-2.5 h-2.5" />}
+        {current.label}
+        <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-1 z-50 bg-dark-700 border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[120px]">
+            {Object.entries(cfg).map(([val, { label, cls }]) => (
+              <button
+                key={val}
+                onClick={() => handleSelect(val)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold hover:bg-white/5 transition-colors text-left ${
+                  val === sub.status ? 'opacity-40 cursor-default' : ''
+                } ${
+                  val === 'active' ? 'text-emerald-400'
+                  : val === 'expired' ? 'text-red-400'
+                  : 'text-amber-400'
+                }`}
+              >
+                {val === 'active'  ? <Check className="w-3 h-3" />
+                : val === 'expired' ? <Clock className="w-3 h-3" />
+                : <Timer className="w-3 h-3" />}
+                {label}
+                {val === sub.status && <Check className="w-3 h-3 ml-auto" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────
 export default function MembersPage() {
-  const [members,      setMembers]      = useState([]);
-  const [plans,        setPlans]        = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [search,       setSearch]       = useState('');
-  const [statusFilter, setStatusFilter] = useState('active');
+  const [members,         setMembers]         = useState([]);
+  const [plans,           setPlans]           = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [search,          setSearch]          = useState('');
+  const [statusFilter,    setStatusFilter]    = useState('active');
+  const [subStatusFilter, setSubStatusFilter] = useState('');   // '' | 'active' | 'expired' | 'pending'
   const [modalMember,  setModalMember]  = useState(undefined);
   // Login creation state
   const [loginTarget,  setLoginTarget]  = useState(null); // member object for CreateLoginModal
   const [credentials,  setCredentials]  = useState(null); // response from edge fn → CredentialsModal
   const { user } = useAuthStore();
   const { canAccess: _canAccess, isAtMemberLimit, maxMembers, plan } = usePlanGate();
-  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showUpgrade,  setShowUpgrade]  = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null); // member object for DeleteConfirmModal
 
   const fetchMembers = async () => {
     if (!user?.gym_id) return;
@@ -884,7 +1089,21 @@ export default function MembersPage() {
         })(),
         supabase.from('subscription_plans').select('*').eq('gym_id', user.gym_id).order('price'),
       ]);
-      setMembers(membersRes.data || []);
+
+      let data = membersRes.data || [];
+
+      // Client-side filter by subscription status (most recent sub per member)
+      if (subStatusFilter) {
+        data = data.filter(m => {
+          const subs = m.member_subscriptions || [];
+          if (!subs.length) return false;
+          // Find the most recent subscription
+          const sorted = [...subs].sort((a, b) => new Date(b.end_date) - new Date(a.end_date));
+          return sorted[0]?.status === subStatusFilter;
+        });
+      }
+
+      setMembers(data);
       setPlans(plansRes.data || []);
     } catch (err) {
       toast.error('Failed to load members');
@@ -893,22 +1112,52 @@ export default function MembersPage() {
     }
   };
 
-  useEffect(() => { fetchMembers(); }, [search, statusFilter, user?.gym_id]);
+  // Inline subscription status change
+  const handleSubStatusChange = async (subId, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('member_subscriptions')
+        .update({ status: newStatus })
+        .eq('id', subId);
+      if (error) throw error;
+      toast.success(`Subscription marked as ${newStatus}`);
+      fetchMembers();
+    } catch (err) {
+      toast.error(err.message || 'Failed to update status');
+    }
+  };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Deactivate this member?')) return;
+  useEffect(() => { fetchMembers(); }, [search, statusFilter, subStatusFilter, user?.gym_id]);
+
+  // Soft delete — mark inactive
+  const handleDeactivate = async (id) => {
     const { error } = await supabase.from('members').update({ status: 'inactive' }).eq('id', id);
-    if (error) { toast.error('Failed'); return; }
+    if (error) { toast.error('Failed to deactivate'); return; }
     toast.success('Member deactivated');
     fetchMembers();
   };
 
-  // Derive subscription display info for a member
+  // Hard delete — permanently remove from DB (cascades subscriptions, attendance etc.)
+  const handlePermanentDelete = async (id) => {
+    try {
+      const { error } = await supabase.from('members').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Member permanently deleted');
+      fetchMembers();
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete member');
+    }
+  };
+
+  // Derive subscription display info for a member (most recent sub, any status)
   const getSubInfo = (m) => {
-    const active = (m.member_subscriptions || []).find(s => s.status === 'active');
-    if (!active) return null;
-    const daysLeft = Math.ceil((new Date(active.end_date) - new Date()) / 86400000);
-    return { ...active, daysLeft, planName: active.subscription_plans?.plan_name };
+    const subs = m.member_subscriptions || [];
+    if (!subs.length) return null;
+    // Prefer active, then most recent by end_date
+    const active = subs.find(s => s.status === 'active');
+    const sub = active || [...subs].sort((a, b) => new Date(b.end_date) - new Date(a.end_date))[0];
+    const daysLeft = Math.ceil((new Date(sub.end_date) - new Date()) / 86400000);
+    return { ...sub, daysLeft, planName: sub.subscription_plans?.plan_name };
   };
 
   return (
@@ -945,18 +1194,46 @@ export default function MembersPage() {
             placeholder="Search by name, ID, phone..."
           />
         </div>
-        <div className="flex rounded-xl overflow-hidden border border-white/10">
-          {['', 'active', 'inactive'].map(s => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                statusFilter === s ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              {s === '' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
+
+        {/* Member status pills */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-gray-600 text-xs font-medium">Member:</span>
+          <div className="flex rounded-xl overflow-hidden border border-white/10">
+            {['', 'active', 'inactive'].map(s => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-3.5 py-2 text-xs font-semibold transition-colors ${
+                  statusFilter === s ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {s === '' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Subscription status pills */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-gray-600 text-xs font-medium">Subscription:</span>
+          <div className="flex rounded-xl overflow-hidden border border-white/10">
+            {[
+              { value: '',         label: 'All',     activeClass: 'bg-primary-600 text-white' },
+              { value: 'active',   label: 'Active',  activeClass: 'bg-emerald-600 text-white' },
+              { value: 'expired',  label: 'Expired', activeClass: 'bg-red-600 text-white' },
+              { value: 'pending',  label: 'Pending', activeClass: 'bg-amber-600 text-white' },
+            ].map(({ value, label, activeClass }) => (
+              <button
+                key={value}
+                onClick={() => setSubStatusFilter(value)}
+                className={`px-3.5 py-2 text-xs font-semibold transition-colors ${
+                  subStatusFilter === value ? activeClass : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -970,7 +1247,8 @@ export default function MembersPage() {
                 <th>ID</th>
                 <th>Phone / Email</th>
                 <th>Goal</th>
-                <th>Subscription</th>
+                <th>Plan</th>
+                <th>Sub Status</th>
                 <th>Login</th>
                 <th>Status</th>
                 <th>Joined</th>
@@ -1024,31 +1302,52 @@ export default function MembersPage() {
                       </div>
                     </td>
                     <td className="text-gray-500 text-sm max-w-[130px] truncate">{m.fitness_goal || '—'}</td>
+                    {/* Plan name + days left */}
                     <td>
                       {!sub ? (
                         <span className="text-gray-600 text-xs">No plan</span>
                       ) : (
                         <div>
                           <p className="text-gray-300 text-sm font-medium">{sub.planName}</p>
-                          <span className={`text-[11px] font-semibold ${
-                            urgency === 'paid'     ? 'text-emerald-400'
-                            : urgency === 'critical' ? 'text-red-400'
-                            : urgency === 'warning'  ? 'text-orange-400'
-                            : urgency === 'caution'  ? 'text-amber-400'
-                            : 'text-gray-500'
-                          }`}>
-                            {urgency === 'paid'
-                              ? <span className="flex items-center gap-1"><Check className="w-3 h-3" /> Paid</span>
-                              : urgency === 'critical'
-                              ? <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Expires in &lt; 24h</span>
-                              : urgency === 'warning'
-                              ? <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {sub.daysLeft}d left</span>
-                              : urgency === 'caution'
-                              ? <span className="flex items-center gap-1"><Bell className="w-3 h-3" /> {sub.daysLeft}d left</span>
-                              : `${sub.daysLeft}d left`}
-                          </span>
+                          {sub.status === 'active' && (
+                            <span className={`text-[11px] font-semibold ${
+                              urgency === 'paid'     ? 'text-emerald-400'
+                              : urgency === 'critical' ? 'text-red-400'
+                              : urgency === 'warning'  ? 'text-orange-400'
+                              : urgency === 'caution'  ? 'text-amber-400'
+                              : 'text-gray-500'
+                            }`}>
+                              {urgency === 'paid'
+                                ? <span className="flex items-center gap-1"><Check className="w-3 h-3" /> Paid</span>
+                                : urgency === 'critical'
+                                ? <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Expires &lt; 24h</span>
+                                : urgency === 'warning'
+                                ? <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {sub.daysLeft}d left</span>
+                                : urgency === 'caution'
+                                ? <span className="flex items-center gap-1"><Bell className="w-3 h-3" /> {sub.daysLeft}d left</span>
+                                : `${sub.daysLeft}d left`}
+                            </span>
+                          )}
+                          {sub.status === 'expired' && (
+                            <span className="text-red-400 text-[11px] font-semibold flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> Expired
+                            </span>
+                          )}
+                          {sub.status === 'pending' && (
+                            <span className="text-amber-400 text-[11px] font-semibold flex items-center gap-1">
+                              <Timer className="w-3 h-3" /> Pending
+                            </span>
+                          )}
                         </div>
                       )}
+                    </td>
+
+                    {/* Subscription status quick-change */}
+                    <td>
+                      <SubStatusBadge
+                        sub={sub}
+                        onChangeStatus={handleSubStatusChange}
+                      />
                     </td>
                     {/* Login status column */}
                     <td>
@@ -1084,7 +1383,11 @@ export default function MembersPage() {
                         <button onClick={() => setModalMember(m)} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDelete(m.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                        <button
+                          onClick={() => setDeleteTarget(m)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          title="Remove member"
+                        >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -1126,6 +1429,16 @@ export default function MembersPage() {
         <CredentialsModal
           creds={credentials}
           onClose={() => setCredentials(null)}
+        />
+      )}
+
+      {/* Delete confirm modal */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          member={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeactivate={handleDeactivate}
+          onPermanentDelete={handlePermanentDelete}
         />
       )}
 

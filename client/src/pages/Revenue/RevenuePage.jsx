@@ -109,10 +109,10 @@ export default function RevenuePage() {
       }
 
       const [paymentsRes, subsRes, duesRes, recentRes] = await Promise.all([
-        // All fee payments in period
+        // All fee payments in period — include notes so we can split admission vs subscription
         (() => {
           let q = supabase.from('fee_payments')
-            .select('amount_paid, payment_date, payment_method')
+            .select('amount_paid, payment_date, payment_method, notes, subscription_id')
             .eq('gym_id', gymId)
             .gte('payment_date', fromDate);
           if (toDateStr) q = q.lte('payment_date', toDateStr);
@@ -139,37 +139,51 @@ export default function RevenuePage() {
 
       const allPayments = paymentsRes.data || [];
 
-      // ── Monthly Revenue chart ─────────────────────────────
+      // ── Split: admission fees vs subscription payments ────
+      const admissionPayments    = allPayments.filter(p => p.notes === 'Admission Fee');
+      const subscriptionPayments = allPayments.filter(p => p.notes !== 'Admission Fee');
+
+      // ── Monthly Revenue chart (two bars: subscription + admission) ──
       const monthMap = {};
-      months.forEach(m => { monthMap[m.key] = { label: m.label, revenue: 0, txns: 0 }; });
+      months.forEach(m => {
+        monthMap[m.key] = { label: m.label, subscriptions: 0, admissionFees: 0, txns: 0 };
+      });
       allPayments.forEach(p => {
-        // Match by full date key (for daily) or month prefix (for monthly)
         const kFull  = p.payment_date;
         const kMonth = p.payment_date?.slice(0, 7);
         const key    = monthMap[kFull] ? kFull : kMonth;
         if (monthMap[key]) {
-          monthMap[key].revenue += Number(p.amount_paid);
+          if (p.notes === 'Admission Fee') {
+            monthMap[key].admissionFees += Number(p.amount_paid);
+          } else {
+            monthMap[key].subscriptions += Number(p.amount_paid);
+          }
           monthMap[key].txns += 1;
         }
       });
       setMonthlyRevenue(Object.values(monthMap));
 
       // ── KPIs ─────────────────────────────────────────────
-      const totalRevenue  = allPayments.reduce((s, p) => s + Number(p.amount_paid), 0);
-      const currentMonth  = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,'0')}`;
-      const thisMonthRev  = allPayments
+      const totalRevenue      = allPayments.reduce((s, p) => s + Number(p.amount_paid), 0);
+      const admissionRevenue  = admissionPayments.reduce((s, p) => s + Number(p.amount_paid), 0);
+      const subscriptionRev   = subscriptionPayments.reduce((s, p) => s + Number(p.amount_paid), 0);
+      const currentMonth      = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,'0')}`;
+      const thisMonthRev      = allPayments
         .filter(p => p.payment_date?.startsWith(currentMonth))
         .reduce((s, p) => s + Number(p.amount_paid), 0);
-      const activeCount   = (subsRes.data || []).length;
+      const activeCount       = (subsRes.data || []).length;
 
-      // Dues
+      // Dues — only look at payments linked to a subscription (skip admission fees)
       const paidMapRes = await supabase
         .from('fee_payments')
         .select('subscription_id, amount_paid')
-        .eq('gym_id', gymId);
+        .eq('gym_id', gymId)
+        .not('subscription_id', 'is', null); // ← exclude admission fees (null sub_id)
       const paidMap = {};
       (paidMapRes.data || []).forEach(p => {
-        paidMap[p.subscription_id] = (paidMap[p.subscription_id] || 0) + Number(p.amount_paid);
+        if (p.subscription_id) { // safety guard
+          paidMap[p.subscription_id] = (paidMap[p.subscription_id] || 0) + Number(p.amount_paid);
+        }
       });
       const duesRows = (duesRes.data || []).map(s => ({
         ...s,
@@ -183,7 +197,7 @@ export default function RevenuePage() {
       })).filter(s => s.balance > 0);
       const totalDues = duesRows.reduce((s, r) => s + r.balance, 0);
 
-      setKpis({ totalRevenue, thisMonthRev, activeCount, totalDues });
+      setKpis({ totalRevenue, admissionRevenue, subscriptionRev, thisMonthRev, activeCount, totalDues });
       setDuesList(duesRows);
 
       // ── Plan Breakdown pie ────────────────────────────────
@@ -246,9 +260,10 @@ export default function RevenuePage() {
   const kpiCards = [
     {
       label: period === 'custom' && customFrom && customTo
-        ? `Revenue (${customFrom} → ${customTo})`
-        : `Revenue (${period})`,
+        ? `Total Revenue (${customFrom} → ${customTo})`
+        : `Total Revenue (${period})`,
       value: `₹${(kpis.totalRevenue || 0).toLocaleString('en-IN')}`,
+      sub: `Subscriptions ₹${(kpis.subscriptionRev || 0).toLocaleString('en-IN')}`,
       icon: TrendingUp,
       color: 'from-primary-600 to-primary-500',
       glow: 'shadow-primary-600/20',
@@ -261,11 +276,12 @@ export default function RevenuePage() {
       glow: 'shadow-emerald-600/20',
     },
     {
-      label: 'Active Subscriptions',
-      value: kpis.activeCount ?? '—',
-      icon: Users,
-      color: 'from-blue-600 to-blue-500',
-      glow: 'shadow-blue-600/20',
+      label: 'Admission Fees',
+      value: `₹${(kpis.admissionRevenue || 0).toLocaleString('en-IN')}`,
+      sub: 'One-time · All time',
+      icon: CheckCircle2,
+      color: 'from-amber-600 to-amber-500',
+      glow: 'shadow-amber-600/20',
     },
     {
       label: 'Outstanding Dues',
@@ -335,7 +351,7 @@ export default function RevenuePage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpiCards.map(({ label, value, icon: Icon, color, glow }) => (
+        {kpiCards.map(({ label, value, sub, icon: Icon, color, glow }) => (
           <div key={label} className={`kpi-card shadow-lg ${glow}`}>
             <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center flex-shrink-0`}>
               <Icon className="w-5 h-5 text-white" />
@@ -345,6 +361,9 @@ export default function RevenuePage() {
               <p className="text-2xl font-bold text-white">
                 {loading ? <span className="inline-block w-16 h-6 bg-dark-600 rounded animate-pulse" /> : value}
               </p>
+              {sub && !loading && (
+                <p className="text-gray-500 text-[11px] mt-0.5">{sub}</p>
+              )}
             </div>
           </div>
         ))}
@@ -352,11 +371,22 @@ export default function RevenuePage() {
 
       {/* Revenue Chart */}
       <div className="card">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-8 h-8 rounded-lg bg-primary-600/20 flex items-center justify-center">
-            <BarChart2 className="w-4 h-4 text-primary-400" />
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-primary-600/20 flex items-center justify-center">
+              <BarChart2 className="w-4 h-4 text-primary-400" />
+            </div>
+            <h2 className="text-lg font-semibold text-white">Monthly Revenue</h2>
           </div>
-          <h2 className="text-lg font-semibold text-white">Monthly Revenue</h2>
+          {/* Legend */}
+          <div className="flex items-center gap-4 text-xs text-gray-400">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-primary-500" /> Subscriptions
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Admission Fees
+            </span>
+          </div>
         </div>
         {loading ? (
           <div className="h-64 flex items-center justify-center">
@@ -370,11 +400,17 @@ export default function RevenuePage() {
               <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false}
                 tickFormatter={v => v >= 1000 ? `₹${(v/1000).toFixed(0)}k` : `₹${v}`} />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-              <Bar dataKey="revenue" name="Revenue" fill="url(#revGrad)" radius={[6, 6, 0, 0]} />
+              <Legend wrapperStyle={{ display: 'none' }} />
+              <Bar dataKey="subscriptions" name="Subscriptions" stackId="rev" fill="url(#revGrad)" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="admissionFees" name="Admission Fees" stackId="rev" fill="url(#admGrad)" radius={[6, 6, 0, 0]} />
               <defs>
                 <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#c044ef" />
                   <stop offset="100%" stopColor="#7c3aed" stopOpacity={0.6} />
+                </linearGradient>
+                <linearGradient id="admGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#f59e0b" />
+                  <stop offset="100%" stopColor="#d97706" stopOpacity={0.7} />
                 </linearGradient>
               </defs>
             </BarChart>
@@ -555,22 +591,35 @@ export default function RevenuePage() {
             ))
           ) : recentPayments.length === 0 ? (
             <div className="text-center py-10 text-gray-500">No payments recorded yet</div>
-          ) : recentPayments.map(p => (
-            <div key={p.id} className="px-5 py-3 flex items-center justify-between hover:bg-white/2 transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center text-lg">
-                  {({ cash: '💵', upi: '📱', card: '💳', bank_transfer: '🏦' })[p.payment_method] || '💵'}
+          ) : recentPayments.map(p => {
+            const isAdmission = p.notes === 'Admission Fee';
+            const methodIcon  = isAdmission
+              ? '🎟️'
+              : ({ cash: '💵', upi: '📱', card: '💳', bank_transfer: '🏦' })[p.payment_method] || '💵';
+            const label = p.notes
+              ? p.notes
+              : (p.payment_method?.replace('_', ' ') || 'Cash');
+            return (
+              <div key={p.id} className="px-5 py-3 flex items-center justify-between hover:bg-white/2 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
+                    isAdmission ? 'bg-amber-500/15' : 'bg-emerald-500/15'
+                  }`}>
+                    {methodIcon}
+                  </div>
+                  <div>
+                    <p className="text-white font-medium text-sm">{p.member_name}</p>
+                    <p className="text-gray-500 text-xs">
+                      {p.payment_date} · <span className={isAdmission ? 'text-amber-400 font-medium' : ''}>{label}</span>
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-white font-medium text-sm">{p.member_name}</p>
-                  <p className="text-gray-500 text-xs">
-                    {p.payment_date} · {p.notes ? p.notes : p.payment_method?.replace('_', ' ')}
-                  </p>
-                </div>
+                <span className={`font-bold ${isAdmission ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  +₹{Number(p.amount_paid).toLocaleString('en-IN')}
+                </span>
               </div>
-              <span className="text-emerald-400 font-bold">+₹{Number(p.amount_paid).toLocaleString('en-IN')}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

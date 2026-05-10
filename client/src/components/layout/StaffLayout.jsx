@@ -2,15 +2,16 @@ import { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Clock, LogOut,
-  Dumbbell, Menu, X, ChevronRight, UserCog,
+  Dumbbell, Menu, X, ChevronRight, UserCog, UserPlus,
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 
 const NAV_ITEMS = [
-  { to: '/staff-portal/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/staff-portal/members',   label: 'My Members', icon: Users },
-  { to: '/staff-portal/attendance',label: 'Attendance', icon: Clock },
-  { to: '/staff-portal/profile',   label: 'Profile',    icon: UserCog },
+  { to: '/staff-portal/dashboard',   label: 'Dashboard',  icon: LayoutDashboard, end: true },
+  { to: '/staff-portal/add-member',  label: 'Add Member', icon: UserPlus },
+  { to: '/staff-portal/members',     label: 'My Members', icon: Users },
+  { to: '/staff-portal/attendance',  label: 'Attendance', icon: Clock },
+  { to: '/staff-portal/profile',     label: 'Profile',    icon: UserCog },
 ];
 
 export default function StaffLayout() {
