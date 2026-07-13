@@ -4,6 +4,7 @@ import {
   Trash2, Users, Send, Loader2, BookOpen
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { trainerAssignmentsForTrainer } from '../../data/trainerAssignments';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 
@@ -306,9 +307,9 @@ export default function TrainerHub({ trainer }) {
 
   const loadMembers = async () => {
     if (!trainerId || !gymId) return;
-    const { data } = await supabase.from('trainer_assignments')
-      .select('member_id, members(id, full_name, member_code, photo_url)')
-      .eq('trainer_id', trainerId).eq('gym_id', gymId).eq('is_active', true);
+    const { data } = await trainerAssignmentsForTrainer(
+      gymId, trainerId, 'member_id, members(id, full_name, member_code, photo_url)'
+    ).eq('is_active', true);
     setMembers((data || []).map(d => d.members).filter(Boolean));
     setLoading(false);
   };

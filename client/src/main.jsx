@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 
 // ── One-time PWA key migration: clear old dismissed flag ────
 // v2 key is obsolete; clearing it ensures returning users see the new popup
@@ -22,7 +23,9 @@ if ('serviceWorker' in navigator) {
 }
 
 createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+  <ErrorBoundary>
+    <StrictMode>
+      <App />
+    </StrictMode>
+  </ErrorBoundary>,
 );

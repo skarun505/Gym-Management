@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Dumbbell, X, UserPlus, UserMinus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { trainerAssignmentsForTrainer } from '../../data/trainerAssignments';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 
@@ -15,10 +16,9 @@ export default function TrainerAssignments({ trainer }) {
     if (!trainer?.profile_id || !user?.gym_id) return;
     setLoading(true);
     const [{ data: assigns }, { data: members }] = await Promise.all([
-      supabase.from('trainer_assignments')
-        .select('id, member_id, members(id, full_name, photo_url, member_code)')
-        .eq('trainer_id', trainer.profile_id)
-        .eq('gym_id', user.gym_id),
+      trainerAssignmentsForTrainer(
+        user.gym_id, trainer.profile_id, 'id, member_id, members(id, full_name, photo_url, member_code)'
+      ),
       supabase.from('members')
         .select('id, full_name, photo_url, member_code, status')
         .eq('gym_id', user.gym_id)

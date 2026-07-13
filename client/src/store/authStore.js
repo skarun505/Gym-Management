@@ -55,7 +55,10 @@ const useAuthStore = create((set, get) => ({
   user:        JSON.parse(localStorage.getItem('gym_user') || 'null'),
   session:     null,
   isLoading:   false,
-  initialized: false,
+  // Mark initialized immediately if we have a cached user — this eliminates
+  // the full-screen spinner flash on every page load for returning users.
+  // restoreSession() still runs in the background to verify & refresh the data.
+  initialized: !!JSON.parse(localStorage.getItem('gym_user') || 'null'),
   error:       null,
 
   // ── Login ──────────────────────────────────────────────────────
@@ -172,8 +175,10 @@ const useAuthStore = create((set, get) => ({
   },
 
   // ── Listen for auth changes (token refresh, sign-out from another tab) ──
+  // Returns the subscription object so the caller can unsubscribe on cleanup
+  // (prevents duplicate listeners in React StrictMode's double-mount).
   listenToAuthChanges: () => {
-    supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
         if (get().user) {
           localStorage.removeItem('gym_user');
@@ -190,6 +195,7 @@ const useAuthStore = create((set, get) => ({
         set({ session });
       }
     });
+    return data; // { subscription } — call subscription.unsubscribe() to clean up
   },
 
   clearError: () => set({ error: null }),

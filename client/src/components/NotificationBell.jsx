@@ -84,6 +84,26 @@ export default function NotificationBell() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ── 5-minute polling — keeps bell count fresh without a page refresh ──
+  useEffect(() => {
+    const interval = setInterval(load, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [load]);
+
+  // ── Prune stale seen IDs after each load ────────────────────────────
+  // Prevents localStorage from accumulating IDs that no longer exist
+  useEffect(() => {
+    if (notifs.length === 0) return;
+    const currentIds = new Set(notifs.map(n => n.id));
+    setSeen(prev => {
+      const pruned = new Set([...prev].filter(id => currentIds.has(id)));
+      if (pruned.size !== prev.size) {
+        localStorage.setItem(STORAGE_KEY(user?.gym_id), JSON.stringify([...pruned]));
+      }
+      return pruned;
+    });
+  }, [notifs, user?.gym_id]);
+
   // Close on outside click
   useEffect(() => {
     if (!open) return;

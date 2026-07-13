@@ -5,7 +5,7 @@ import {
   Save, CheckCircle, Upload, RefreshCw, Trash2, Plus, X, Camera, Loader2,
   KeyRound, Shield, Users, Lock, Eye, EyeOff,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, edgeFunctionUrl } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { usePlanGate, PLAN_CONFIG, FEATURE_LABELS } from '../../hooks/usePlanGate';
@@ -404,19 +404,10 @@ function PlansTab({ gymId }) {
 }
 
 // ── ④ Access Control Tab ──────────────────────────────────────
-function ResetPasswordModal({ account, onClose, onSuccess }) {
-  const [password, setPassword] = useState('');
-  const [visible, setVisible]   = useState(false);
-  const [saving, setSaving]     = useState(false);
+function ResendInviteModal({ account, onClose, onSuccess }) {
+  const [saving, setSaving] = useState(false);
 
-  const generate = () => {
-    const c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#!';
-    setPassword(Array.from({ length: 12 }, () => c[Math.floor(Math.random() * c.length)]).join(''));
-    setVisible(true);
-  };
-
-  const save = async () => {
-    if (!password || password.length < 8) { toast.error('Min 8 characters'); return; }
+  const send = async () => {
     setSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -424,7 +415,7 @@ function ResetPasswordModal({ account, onClose, onSuccess }) {
       const fnName  = account.type === 'staff' ? 'create-staff-login' : 'create-member-login';
       const bodyKey = account.type === 'staff' ? 'staff_id'           : 'memberId';
       const res = await fetch(
-        `https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/${fnName}`,
+        edgeFunctionUrl(fnName),
         {
           method: 'POST',
           headers: {
@@ -432,12 +423,29 @@ function ResetPasswordModal({ account, onClose, onSuccess }) {
             'Content-Type': 'application/json',
             apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
-          body: JSON.stringify({ [bodyKey]: account.id, password, full_name: account.name }),
+          body: JSON.stringify({
+            [bodyKey]: account.id,
+            email: account.email,
+            full_name: account.name,
+            redirectTo: `${window.location.origin}/set-password`,
+          }),
         }
       );
       const data = await res.json();
+
+      if (res.status === 409) {
+        toast('This account already has a password set — nothing to resend.', { icon: 'ℹ️' });
+        onClose();
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Failed');
-      toast.success(`Password reset for ${account.name}!`);
+
+      if (data.manualLink) {
+        await navigator.clipboard.writeText(data.manualLink);
+        toast.success('Invite link copied — automatic email wasn\'t available, share it with them directly.');
+      } else {
+        toast.success(`Invite sent to ${account.name}!`);
+      }
       onSuccess();
     } catch (e) { toast.error(e.message); }
     finally { setSaving(false); }
@@ -452,7 +460,7 @@ function ResetPasswordModal({ account, onClose, onSuccess }) {
               <KeyRound className="w-4 h-4 text-amber-400" />
             </div>
             <div>
-              <p className="text-white font-semibold text-sm">Reset Password</p>
+              <p className="text-white font-semibold text-sm">Resend Login Invite</p>
               <p className="text-gray-500 text-xs">{account.name} · {account.email}</p>
             </div>
           </div>
@@ -460,39 +468,17 @@ function ResetPasswordModal({ account, onClose, onSuccess }) {
         </div>
         <div className="p-5 space-y-4">
           <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300">
-            🔄 This will immediately update the login password for <strong>{account.name}</strong>. Share the new password with them.
+            📧 We'll email <strong>{account.name}</strong> a fresh link to set their own password. If they've
+            already accepted their invite, this has no effect.
           </div>
-          <div>
-            <label className="label">New Password *</label>
-            <div className="relative">
-              <input value={password} onChange={e => setPassword(e.target.value)}
-                type={visible ? 'text' : 'password'} placeholder="Min 8 characters"
-                className="input-field pr-20" />
-              <button type="button" onClick={() => setVisible(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
-                {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <button onClick={generate} type="button"
-              className="mt-1.5 text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1">
-              <Lock className="w-3 h-3" /> Auto-generate strong password
-            </button>
-          </div>
-          {password && visible && (
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-              <p className="text-xs text-emerald-400 font-semibold">📋 Save these credentials:</p>
-              <p className="text-white text-sm font-mono mt-1">{account.email}</p>
-              <p className="text-white text-sm font-mono">{password}</p>
-            </div>
-          )}
           <div className="flex gap-3">
             <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button onClick={save} disabled={saving}
+            <button onClick={send} disabled={saving}
               className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50">
               {saving
                 ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 : <KeyRound className="w-4 h-4" />}
-              {saving ? 'Resetting…' : 'Reset Password'}
+              {saving ? 'Sending…' : 'Resend Invite'}
             </button>
           </div>
         </div>
@@ -605,7 +591,7 @@ function AccessControlTab({ gymId }) {
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
                     bg-amber-500/10 text-amber-400 border border-amber-500/20
                     hover:bg-amber-500/20 transition-colors">
-                  <KeyRound className="w-3.5 h-3.5" /> Reset Password
+                  <KeyRound className="w-3.5 h-3.5" /> Resend Invite
                 </button>
               </div>
             </div>
@@ -614,7 +600,7 @@ function AccessControlTab({ gymId }) {
       )}
 
       {selected && (
-        <ResetPasswordModal
+        <ResendInviteModal
           account={selected}
           onClose={() => setSelected(null)}
           onSuccess={() => { setSelected(null); load(); }}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { getMyStaffProfile } from '../../data/staffProfile';
 import useAuthStore from '../../store/authStore';
 import {
   UserCog, Building2, Phone, Mail, Calendar, Shield,
@@ -15,13 +15,7 @@ export default function StaffProfilePage() {
   const load = async () => {
     if (!user?.id || !user?.gym_id) return;
     setLoading(true);
-    // FIX: use correct column names — shift_info (not shift), created_at (not joined_at)
-    const { data, error } = await supabase
-      .from('staff')
-      .select('id, full_name, role, email, phone, shift_info, created_at, status, photo_url, profile_id, staff_code, dob, salary')
-      .eq('profile_id', user.id)
-      .eq('gym_id', user.gym_id)
-      .maybeSingle();
+    const { data, error } = await getMyStaffProfile(user.gym_id, user.id);
 
     if (error) {
       console.error('[StaffProfile] Error:', error);

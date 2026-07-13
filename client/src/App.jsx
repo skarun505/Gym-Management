@@ -14,6 +14,7 @@ import PrivateRoute    from './routes/PrivateRoute';
 
 // ── Auth (always needed first) ────────────────────────────────────────────
 import LoginPage from './pages/Login/LoginPage';
+import SetPasswordPage from './pages/Auth/SetPasswordPage';
 
 // ── Gym Owner Portal — lazy loaded ───────────────────────────────────────
 const DashboardPage      = lazy(() => import('./pages/Dashboard/DashboardPage'));
@@ -74,7 +75,9 @@ export default function App() {
 
   useEffect(() => {
     restoreSession();
-    listenToAuthChanges();
+    const { subscription } = listenToAuthChanges();
+    // Unsubscribe on unmount — prevents duplicate listeners in React StrictMode
+    return () => subscription?.unsubscribe();
   }, []);
 
   return (
@@ -100,6 +103,7 @@ export default function App() {
         <Routes>
           {/* ── Public ── */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/set-password" element={<SetPasswordPage />} />
 
           {/* ── Super Admin Portal ── */}
           <Route
@@ -137,10 +141,7 @@ export default function App() {
             <Route path="settings"      element={<PrivateRoute roles={['gym_owner']}><GymSettingsPage /></PrivateRoute>} />
           </Route>
 
-          {/* ── Catch-all ── */}
-          <Route path="*" element={<Navigate to="/" replace />} />
 
-          {/* ── Member Portal ── */}
           <Route
             path="/member"
             element={
@@ -175,6 +176,9 @@ export default function App() {
             <Route path="attendance" element={<StaffAttendancePage />} />
             <Route path="profile"    element={<StaffProfilePage />} />
           </Route>
+
+          {/* ── Catch-all: must be last so it doesn't swallow /member or /staff-portal ── */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
       <Analytics />

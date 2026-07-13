@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, X, Building2, Search, Eye, EyeOff,
   Copy, CheckCircle, AlertCircle, RefreshCw,
-  ShieldOff, ShieldCheck, ChevronDown, Edit2, Save, KeyRound, Lock,
+  ShieldOff, ShieldCheck, ChevronDown, Edit2, Save, KeyRound, Lock, Mail, Send,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, edgeFunctionUrl } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
 // ── Plan-based member limits ───────────────────────────────────
@@ -25,13 +25,12 @@ function generateGymCode(name) {
   return `GYM_${prefix}${suffix}`;
 }
 
-// ── Credentials Modal (shown once after gym creation) ────────
-function CredentialsModal({ credentials, onClose }) {
+// ── Invite Sent Modal (shown once after gym creation) ────────
+function InviteSentModal({ invite, onClose }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    const text = `GymPro Login Credentials\n\nGym: ${credentials.gymName}\nCode: ${credentials.gymCode}\n\nEmail: ${credentials.email}\nPassword: ${credentials.password}\n\nLogin: https://your-app.vercel.app/login`;
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(invite.email);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -43,44 +42,43 @@ function CredentialsModal({ credentials, onClose }) {
         <div className="p-6 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-              <CheckCircle className="w-4 h-4 text-emerald-400" />
+              <Mail className="w-4 h-4 text-emerald-400" />
             </div>
-            <h2 className="text-lg font-semibold text-white">Gym Created Successfully!</h2>
+            <h2 className="text-lg font-semibold text-white">Invite Sent!</h2>
           </div>
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
         </div>
 
-        {/* Credentials */}
         <div className="p-6 space-y-4">
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-start gap-2 text-sm text-amber-300">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            Save these credentials now — the password won't be shown again.
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex items-start gap-2 text-sm text-emerald-300">
+            <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            {invite.gymName} is onboarded. The owner will get an email to set their own password.
           </div>
 
           <div className="bg-dark-700 rounded-xl p-5 space-y-3 font-mono text-sm">
             <div className="flex justify-between items-center">
               <span className="text-gray-400">Gym Name</span>
-              <span className="text-white font-semibold">{credentials.gymName}</span>
+              <span className="text-white font-semibold">{invite.gymName}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-400">Gym Code</span>
-              <span className="text-violet-400">{credentials.gymCode}</span>
+              <span className="text-violet-400">{invite.gymCode}</span>
             </div>
             <div className="border-t border-white/5 my-2" />
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Email</span>
-              <span className="text-white">{credentials.email}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-400">Password</span>
-              <span className="text-emerald-400 font-bold">{credentials.password}</span>
+              <span className="text-gray-400">Invited Email</span>
+              <span className="text-white">{invite.email}</span>
             </div>
           </div>
+
+          <p className="text-gray-500 text-xs">
+            Didn't arrive, or the link expired? Use "Resend invite" on this gym's row any time.
+          </p>
 
           <div className="flex gap-3">
             <button onClick={handleCopy} className="btn-primary flex-1 justify-center gap-2">
               {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              {copied ? 'Copied!' : 'Copy Credentials'}
+              {copied ? 'Copied!' : 'Copy Email'}
             </button>
             <button onClick={onClose} className="btn-secondary">Done</button>
           </div>
@@ -118,7 +116,7 @@ function ResetOwnerPasswordModal({ gym, onClose }) {
       if (!accessToken) throw new Error('Session expired. Please log out and log in again.');
 
       const res = await fetch(
-        'https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/reset-owner-password',
+        edgeFunctionUrl('reset-owner-password'),
         {
           method: 'POST',
           headers: {
@@ -392,8 +390,6 @@ function CreateGymModal({ onClose, onCreated }) {
     plan_expires_at: '',
     theme_color: '#a21cce',
   });
-  const [password, setPassword] = useState(generatePassword());
-  const [showPass, setShowPass] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
@@ -424,7 +420,7 @@ function CreateGymModal({ onClose, onCreated }) {
 
       // Step 2: Call Edge Function with valid token
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-gym`,
+        edgeFunctionUrl('create-gym'),
         {
           method: 'POST',
           headers: {
@@ -436,12 +432,12 @@ function CreateGymModal({ onClose, onCreated }) {
             gymName:       form.name,
             ownerName:     form.owner_name,
             email:         form.email,
-            password,
             phone:         form.phone,
             address:       form.address,
             plan:          form.plan,
             planExpiresAt: form.plan_expires_at || null,
             themeColor:    form.theme_color,
+            redirectTo:    `${window.location.origin}/set-password`,
           }),
         }
       );
@@ -449,8 +445,8 @@ function CreateGymModal({ onClose, onCreated }) {
       const data = await response.json();
       if (!response.ok || data?.error) throw new Error(data?.error || 'Failed to create gym');
 
-      toast.success(`${form.name} has been onboarded!`);
-      onCreated(data.credentials);
+      toast.success(`${form.name} has been onboarded — invite sent!`);
+      onCreated({ gymName: data.gym.name, gymCode: data.gym.gymCode, email: form.email });
     } catch (err) {
       console.error('[CreateGym]', err);
       toast.error(err.message || 'Failed to create gym');
@@ -518,9 +514,9 @@ function CreateGymModal({ onClose, onCreated }) {
             </div>
           </div>
 
-          {/* Login Credentials */}
+          {/* Owner Login */}
           <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Login Credentials</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Owner Login</p>
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <label className="label">Owner Email (login) *</label>
@@ -531,32 +527,9 @@ function CreateGymModal({ onClose, onCreated }) {
                   className="input-field"
                   placeholder="owner@planetfitness.com"
                 />
-              </div>
-              <div className="col-span-2">
-                <label className="label">Generated Password</label>
-                <div className="relative flex gap-2">
-                  <input
-                    type={showPass ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    className="input-field pr-10 flex-1 font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass(s => !s)}
-                    className="absolute right-24 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                  >
-                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPassword(generatePassword())}
-                    className="btn-secondary px-3 flex-shrink-0"
-                    title="Regenerate"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
-                </div>
+                <p className="text-gray-600 text-xs mt-1.5">
+                  We'll email this address a link to set their own password — no password to generate or share yourself.
+                </p>
               </div>
             </div>
           </div>
@@ -628,7 +601,7 @@ function CreateGymModal({ onClose, onCreated }) {
             ) : (
               <Plus className="w-4 h-4" />
             )}
-            {saving ? 'Creating...' : 'Create Gym & Generate Credentials'}
+            {saving ? 'Creating...' : 'Create Gym & Send Invite'}
           </button>
         </div>
       </div>
@@ -642,9 +615,10 @@ export default function GymsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [credentials, setCredentials] = useState(null);
+  const [inviteResult, setInviteResult] = useState(null);
   const [editGym, setEditGym] = useState(null);
   const [resetGym, setResetGym] = useState(null); // for password reset
+  const [resendingId, setResendingId] = useState(null);
 
   const fetchGyms = useCallback(async () => {
     setLoading(true);
@@ -680,6 +654,39 @@ export default function GymsPage() {
     if (error) { toast.error('Update failed'); return; }
     toast.success(`${gym.name} ${newStatus === 'active' ? 'reactivated' : 'suspended'}`);
     fetchGyms();
+  };
+
+  const resendInvite = async (gym) => {
+    setResendingId(gym.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Session expired. Please log in again.');
+
+      const res = await fetch(edgeFunctionUrl('resend-gym-invite'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ gymId: gym.id, redirectTo: `${window.location.origin}/set-password` }),
+      });
+      const data = await res.json();
+
+      if (res.status === 409) { toast('This owner already set their password — no need to resend.', { icon: 'ℹ️' }); return; }
+      if (!res.ok) throw new Error(data.error || 'Could not resend invite');
+
+      if (data.manualLink) {
+        await navigator.clipboard.writeText(data.manualLink);
+        toast.success('Invite link copied — share it with the owner directly (auto-email wasn\'t available for this account).');
+      } else {
+        toast.success(`Invite resent to ${data.email}`);
+      }
+    } catch (err) {
+      toast.error(err.message || 'Could not resend invite');
+    } finally {
+      setResendingId(null);
+    }
   };
 
   const planColors = {
@@ -820,6 +827,14 @@ export default function GymsPage() {
                         <KeyRound className="w-4 h-4" />
                       </button>
                       <button
+                        onClick={() => resendInvite(gym)}
+                        disabled={resendingId === gym.id}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
+                        title="Resend owner invite (no-op if they've already set a password)"
+                      >
+                        <Send className={`w-4 h-4 ${resendingId === gym.id ? 'animate-pulse' : ''}`} />
+                      </button>
+                      <button
                         onClick={() => toggleStatus(gym)}
                         className={`p-1.5 rounded-lg transition-colors ${
                           gym.status === 'active'
@@ -846,17 +861,17 @@ export default function GymsPage() {
       {showCreate && (
         <CreateGymModal
           onClose={() => setShowCreate(false)}
-          onCreated={(creds) => {
+          onCreated={(invite) => {
             setShowCreate(false);
-            setCredentials(creds);
+            setInviteResult(invite);
             fetchGyms();
           }}
         />
       )}
-      {credentials && (
-        <CredentialsModal
-          credentials={credentials}
-          onClose={() => setCredentials(null)}
+      {inviteResult && (
+        <InviteSentModal
+          invite={inviteResult}
+          onClose={() => setInviteResult(null)}
         />
       )}
       {editGym && (

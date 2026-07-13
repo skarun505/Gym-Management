@@ -23,6 +23,11 @@ build/
 # ── Server build ───────────────────────────────────────────────
 server/dist/
 
+# ── SQLite (legacy Express backend, no longer used) ─────────────
+*.db
+*.db-shm
+*.db-wal
+
 # ── Logs ───────────────────────────────────────────────────────
 logs/
 *.log

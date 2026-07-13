@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Zap, Calendar, CheckCircle, ChevronRight, Dumbbell, X, Trophy, Star, Flame, BarChart3, Apple, UserCheck, TrendingUp } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, edgeFunctionUrl } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 
@@ -148,8 +148,6 @@ function StreakRing({ current, longest }) {
 }
 
 // ─── Main Dashboard ──────────────────────────────────────────
-const EDGE_URL = 'https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/process-checkin';
-
 export default function MemberDashboard() {
   const { user } = useAuthStore();
   const [member,        setMember]        = useState(null);
@@ -272,7 +270,7 @@ export default function MemberDashboard() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Not authenticated');
 
-      const res = await fetch(EDGE_URL, {
+      const res = await fetch(edgeFunctionUrl('process-checkin'), {
         method:  'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,

@@ -220,8 +220,14 @@ export default function DashboardPage() {
       // Sort by most recent (they're already limited, just interleave)
       setEvents(feed.slice(0, 8));
 
-      const expiringItems = await fetchExpiringSubscriptions(gymId);
-      setExpiring(expiringItems);
+      // Fetch expiring subscriptions separately — a failure here should not
+      // blank out the whole dashboard (it only affects the reminder banner).
+      try {
+        const expiringItems = await fetchExpiringSubscriptions(gymId);
+        setExpiring(expiringItems);
+      } catch (remErr) {
+        console.warn('[Dashboard] Could not load expiring subscriptions:', remErr);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -324,14 +330,21 @@ export default function DashboardPage() {
                   <Bar dataKey="Checkins" fill={themeColor} radius={[6,6,0,0]} name="Checkins" />
                 </BarChart>
               ) : (
+                // "Both" mode — dual Y-axis so Revenue (₹) and Checkins (count)
+                // don't compete on the same scale (12 check-ins vs ₹5,000 makes
+                // check-ins invisible on a shared axis).
                 <BarChart data={chartData} margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                   <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  {/* Left axis: check-in counts */}
+                  <YAxis yAxisId="left"  tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  {/* Right axis: revenue in ₹ */}
+                  <YAxis yAxisId="right" orientation="right" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false}
+                    tickFormatter={v => v >= 1000 ? `₹${(v/1000).toFixed(0)}k` : `₹${v}`} />
                   <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
                   <Legend wrapperStyle={{ fontSize: 11, color: '#9ca3af', paddingTop: 8 }} />
-                  <Bar dataKey="Checkins" fill={themeColor} radius={[4,4,0,0]} name="Checkins" />
-                  <Bar dataKey="Revenue" fill="#10b981" radius={[4,4,0,0]} name="Revenue" />
+                  <Bar yAxisId="left"  dataKey="Checkins" fill={themeColor} radius={[4,4,0,0]} name="Checkins" />
+                  <Bar yAxisId="right" dataKey="Revenue"  fill="#10b981"   radius={[4,4,0,0]} name="Revenue" />
                 </BarChart>
               )}
             </ResponsiveContainer>

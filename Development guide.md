@@ -1,441 +1,268 @@
-# 🏋️ Gym Management Web App — Cursor Development Guide
+# GymPro — Developer Guide
 
-> **Scope:** 6 core modules · No payment integration · Manual entry throughout  
-> **Stack:** React + Tailwind CSS · Node.js + Express · PostgreSQL  
-> **Build Timeline:** Phase 1 (6–8 weeks) + Phase 2 (5–6 weeks)
-
----
-
-## 📁 Project Structure
-
-```
-gym-management/
-├── client/                        # React frontend (Vite)
-│   ├── public/
-│   ├── src/
-│   │   ├── api/                   # Axios API call functions
-│   │   ├── components/            # Reusable UI components
-│   │   │   ├── common/            # Button, Input, Modal, Table, Badge
-│   │   │   ├── layout/            # Sidebar, Navbar, PageWrapper
-│   │   │   └── modules/           # Module-specific components
-│   │   ├── pages/                 # One folder per module
-│   │   │   ├── Dashboard/
-│   │   │   ├── Members/
-│   │   │   ├── Attendance/
-│   │   │   ├── Subscriptions/
-│   │   │   ├── Staff/
-│   │   │   ├── Inventory/
-│   │   │   └── Reports/
-│   │   ├── hooks/                 # Custom React hooks
-│   │   ├── store/                 # Zustand global state
-│   │   ├── utils/                 # Date helpers, formatters
-│   │   ├── routes/                # React Router config
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── .env
-│   └── package.json
-│
-├── server/                        # Node.js + Express backend
-│   ├── src/
-│   │   ├── controllers/           # Route handlers
-│   │   ├── routes/                # Express route definitions
-│   │   ├── models/                # DB query functions (no ORM)
-│   │   ├── middleware/            # Auth, error handler, validator
-│   │   ├── db/
-│   │   │   ├── pool.js            # PostgreSQL connection pool
-│   │   │   └── migrations/        # SQL schema migration files
-│   │   ├── utils/                 # Logger, response helpers
-│   │   └── app.js
-│   ├── .env
-│   └── package.json
-│
-├── .gitignore
-└── README.md
-```
+> This file used to describe a different app: a single-gym Express + SQLite
+> project with no multi-tenancy. That was the original plan; it's not what
+> got built. This version describes what's actually in the repo and in the
+> live Supabase project. For a user-facing feature overview, see
+> [README.md](README.md).
 
 ---
 
-## ⚙️ Tech Stack & Packages
+## What this actually is
 
-### Frontend (`client/`)
+A multi-tenant gym management SaaS: one deployment serves many gyms, each
+gym's data isolated from the others by Postgres Row Level Security.
+
+| Layer | Reality |
+|---|---|
+| Frontend | React 18 + Vite, deployed as a static site on Vercel (`client/`) |
+| Backend | Supabase — Postgres, Auth, Row Level Security, Edge Functions. There is no Express/Node API server. |
+| Roles | `super_admin` (platform operator) → `gym_owner` → `staff` → `member`, enforced by RLS policies keyed on `profiles.role` and `gym_id` |
+| Deployment | Vercel builds and serves `client/` only (see root `vercel.json`). Supabase project ref: `fmikzzectrzpyuhkmmcg`. |
+
+`server/` in this repo held an Express + SQLite implementation of the
+original single-gym spec. It was never deployed and diverged from day one
+of real development — it has been removed. Backend logic lives in
+`supabase/functions/` (Edge Functions) and `supabase/migrations/` (schema).
+
+---
+
+## Database schema
+
+`supabase/migrations/` is the source of truth for schema changes **going
+forward**. What's tracked right now:
+
+- `20260711120000_add_gym_owner_auth_id.sql` — adds `gyms.owner_auth_id`,
+  used to make gym provisioning idempotent (see Edge Functions below).
+  Pushed and confirmed live.
+
+**The live project's migration history is bigger than this repo's.**
+Supabase's own ledger (`supabase migration list`) shows 34 migrations
+applied between 2026-04-18 and 2026-05-10 — real schema history that
+exists on Supabase's side but was never committed here (they were run
+from some other machine/session at the time). Those 34 entries have been
+reconciled out of the ledger (`migration repair --status reverted`, a
+bookkeeping-only operation — it didn't touch any table, column, or data)
+so `db push`/`db pull` stop erroring, but **their actual SQL content was
+never recovered into this repo** — `supabase db pull` and `supabase db
+dump` both need a local Docker shadow-database to diff against, and that
+step failed repeatedly in this environment (SSL probe timeouts against
+`db.fmikzzectrzpyuhkmmcg.supabase.co:5432`, then an unexplained "no
+changes found" once the shadow DB was empty). Confirmed real tables that
+exist live but have no migration file describing them, found by grepping
+`client/src` for `.from('table_name')` and reading the recovered edge
+functions:
+
+```
+staff, staff_attendance, gym_shifts, fee_payments, gym_announcements,
+gym_challenges, challenge_completions, nutrition_logs, progress_logs,
+trainer_notes, diet_charts, push_subscriptions, notification_logs,
+monthly_leaderboard (view)
+```
+
+**To close this gap:** retry `supabase db dump --linked --schema public -f
+supabase/migrations/<timestamp>_baseline.sql` with Docker Desktop running
+and a stable connection — if the SSL probe/shadow-DB issues were
+environment-specific (they very well might have been; this environment
+had its own Docker cold-start and network flakiness throughout this
+session), it may just work cleanly elsewhere. Until then, treat this repo's
+migration folder as **incomplete but not wrong** — `20260711120000` is
+real and applied; it's just not the whole picture.
+
+### Adding a schema change from here on
+
+Don't edit the schema from the Supabase dashboard. Add a migration:
+
 ```bash
-npm create vite@latest client -- --template react
-cd client
-npm install react-router-dom axios zustand
-npm install @tanstack/react-query
-npm install react-hook-form zod @hookform/resolvers
-npm install recharts                          # Charts for Reports
-npm install react-hot-toast                   # Notifications
-npm install lucide-react                      # Icons
-npm install -D tailwindcss postcss autoprefixer
-npx tailwindcss init -p
+npx supabase migration new <description>
+# edit the generated file in supabase/migrations/
+npx supabase db push     # applies directly to the linked project
 ```
 
-### Backend (`server/`)
+`db push` applies pending local migration files straight against the real
+database and does **not** need Docker — only `db pull`/`db dump`/local
+`db start` do (they use a throwaway Docker Postgres to compute diffs).
+
+### Running the schema locally
+
 ```bash
-mkdir server && cd server && npm init -y
-npm install express pg dotenv cors helmet morgan
-npm install bcryptjs jsonwebtoken
-npm install express-validator
-npm install -D nodemon
+npx supabase start   # needs Docker Desktop running; spins up local Postgres + Auth + Studio
+npx supabase stop
 ```
 
 ---
 
-## 🗄️ Database Schema (PostgreSQL)
+## Row Level Security tests
 
-Run these migrations in order inside `server/src/db/migrations/`.
+`supabase/tests/database/*.test.sql` — pgTAP tests. Currently covers:
 
-### `001_create_members.sql`
-```sql
-CREATE TABLE members (
-  id          SERIAL PRIMARY KEY,
-  member_code VARCHAR(20) UNIQUE NOT NULL,
-  full_name   VARCHAR(100) NOT NULL,
-  dob         DATE,
-  phone       VARCHAR(20),
-  email       VARCHAR(100),
-  address     TEXT,
-  photo_url   TEXT,
-  fitness_goal TEXT,
-  health_notes TEXT,
-  status      VARCHAR(10) DEFAULT 'active' CHECK (status IN ('active','inactive')),
-  created_at  TIMESTAMP DEFAULT NOW()
-);
+- `000_rls_helpers_security_definer.test.sql` — regression lock on the
+  `SECURITY DEFINER` fix for a real RLS-recursion login outage this
+  project had (helper functions in RLS policies must stay
+  `SECURITY DEFINER` or the same infinite-recursion bug comes back)
+- `010_tenant_isolation_members.test.sql` — a gym_owner can only read/write
+  their own gym's `members` rows
+
+Only covers the tables this repo actually has schema for — the
+undocumented tables (see above) have no RLS test coverage yet.
+
+```bash
+npx supabase start
+npx supabase test db supabase/tests/database --local
 ```
 
-### `002_create_staff.sql`
-```sql
-CREATE TABLE staff (
-  id          SERIAL PRIMARY KEY,
-  full_name   VARCHAR(100) NOT NULL,
-  role        VARCHAR(20) CHECK (role IN ('admin','trainer','reception')),
-  phone       VARCHAR(20),
-  email       VARCHAR(100) UNIQUE NOT NULL,
-  password    VARCHAR(255) NOT NULL,
-  shift_info  TEXT,
-  status      VARCHAR(10) DEFAULT 'active',
-  created_at  TIMESTAMP DEFAULT NOW()
-);
+(Not run in this environment — see the Docker/shadow-DB notes above.
+Verify locally before relying on these.)
+
+---
+
+## Edge Functions
+
+`supabase/functions/` — Deno functions, deployed independently of the
+Vercel client build. All 8 functions the live project actually runs are
+now present in this repo (4 were recovered from the live project this
+session — they existed only in Supabase's dashboard/CLI history before,
+with **no local source anywhere**, meaning zero code review or version
+control on account-provisioning logic until now).
+
+| Function | Purpose | Status |
+|---|---|---|
+| `create-gym` | super_admin-only. Creates a gym and **invites** the owner by email. Idempotent — resumes from `gyms.owner_auth_id` instead of orphaning Auth users on partial failure. | Rewritten for invites, deployed |
+| `create-member-login` | gym_owner/staff-only. Invites an existing member by email. Doubles as resend for an unaccepted invite. | Rewritten for invites, deployed |
+| `create-staff-login` | gym_owner-only. Invites an existing staff member by email. Same resend/resume pattern. Recovered this session — previously admin-set a password directly. | Rewritten for invites, deployed |
+| `resend-gym-invite` | super_admin-only. Re-sends a gym owner's invite if unaccepted; errors if already accepted. | New, deployed |
+| `reset-owner-password` | super_admin-only. Directly sets a gym owner's password. Recovered this session, **not** converted to invites — kept as a break-glass recovery tool for when an owner's email is unreachable. | Recovered, unmodified, live (was already deployed) |
+| `process-checkin` | member-only. Records attendance, updates streaks, unlocks achievements. | Unmodified |
+| `send-reminders` | Sends subscription-expiry, birthday, and welcome emails via **Resend** (third-party email API), with dedup via `notification_logs`. Recovered this session. | **Inert** — `RESEND_API_KEY` isn't set in this project's function secrets, so every send silently no-ops (the function itself logs "skipping email"). |
+| `web-push-notify` | Browser push notifications via Web Push (VAPID), reading `push_subscriptions`. Recovered this session. | **Inert** — `VAPID_PRIVATE_KEY`/`VAPID_PUBLIC_KEY` aren't set, so signing fails. |
+
+```bash
+npx supabase functions deploy create-gym create-member-login create-staff-login resend-gym-invite --project-ref fmikzzectrzpyuhkmmcg
 ```
 
-### `003_create_subscriptions.sql`
-```sql
-CREATE TABLE subscription_plans (
-  id          SERIAL PRIMARY KEY,
-  plan_name   VARCHAR(50) NOT NULL,
-  duration    VARCHAR(20) CHECK (duration IN ('monthly','quarterly','yearly')),
-  price       NUMERIC(10,2) NOT NULL
-);
+To turn on the two inert functions: `npx supabase secrets set RESEND_API_KEY=... VAPID_PRIVATE_KEY=... VAPID_PUBLIC_KEY=... VAPID_SUBJECT=mailto:you@yourdomain.com --project-ref fmikzzectrzpyuhkmmcg`, then redeploy them.
 
-CREATE TABLE member_subscriptions (
-  id          SERIAL PRIMARY KEY,
-  member_id   INT REFERENCES members(id) ON DELETE CASCADE,
-  plan_id     INT REFERENCES subscription_plans(id),
-  start_date  DATE NOT NULL,
-  end_date    DATE NOT NULL,
-  status      VARCHAR(15) DEFAULT 'active' CHECK (status IN ('active','expired','pending')),
-  notes       TEXT,
-  created_at  TIMESTAMP DEFAULT NOW()
-);
+---
+
+## Authentication & account provisioning
+
+No admin ever sets or sees another user's password (except the explicit
+break-glass `reset-owner-password` tool above). Gym owners, members, and
+staff all get an **email invite** with a link to set their own password;
+anyone can use **forgot password** the same way.
+
+- `client/src/pages/Auth/SetPasswordPage.jsx` (route `/set-password`) —
+  landing page for both invite-accept and password-reset links. Supabase's
+  client (`detectSessionInUrl: true`) parses the token in the URL and
+  establishes a session automatically; this page waits for that, then
+  lets the user pick a password via `supabase.auth.updateUser({ password })`.
+- `client/src/pages/Login/LoginPage.jsx` — "Forgot password?" calls
+  `supabase.auth.resetPasswordForEmail(email, { redirectTo: '.../set-password' })`.
+- `create-gym` / `create-member-login` / `create-staff-login` call
+  `supabase.auth.admin.inviteUserByEmail(...)` instead of setting a
+  password. Every "create login" UI (`GymsPage`, `MembersPage`,
+  `GymSettingsPage`'s Access Control tab) now sends an invite and, on
+  retry for an unaccepted account, resends it — consistently across all
+  three roles.
+
+**Required dashboard config (not doable from this repo — not attempted
+this session; editing live Auth config wasn't something explicitly
+authorized, unlike the migration ledger repair):**
+
+1. **Authentication → URL Configuration → Redirect URLs** — add
+   `https://<your-vercel-domain>/set-password` and
+   `http://localhost:5173/set-password`. Supabase silently falls back to
+   the Site URL for any `redirectTo` not on this list, so invite/reset
+   links will land in the wrong place until this is added. **Do this
+   before testing the invite flow for real** — without it, invite emails
+   will send, but the link inside them won't route to the password-setup
+   page.
+2. **Authentication → Emails** — review the "Invite user" and "Reset
+   password" templates, and check the link expiry setting.
+3. Supabase's **built-in Auth email sender is rate-limited** (a handful of
+   emails/hour on the free tier). This is separate from `send-reminders`'
+   Resend integration above — Auth emails (invites, resets) always go
+   through Supabase's own sender regardless of the Resend key.
+
+---
+
+## Resetting all data
+
+`supabase/scripts/reset_all_data.sql` — truncates every gym/member/staff
+table (keeps `achievements`, which is seed data). **Already run once this
+session** (by request) against the live project. Auth users were deleted
+separately via the dashboard, as documented in the script.
+
+---
+
+## Environment variables
+
+**`client/.env`** (see `client/.env.example`):
+```
+VITE_SUPABASE_URL=https://fmikzzectrzpyuhkmmcg.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key>
 ```
 
-### `004_create_attendance.sql`
-```sql
-CREATE TABLE attendance (
-  id          SERIAL PRIMARY KEY,
-  member_id   INT REFERENCES members(id) ON DELETE CASCADE,
-  check_in    TIMESTAMP NOT NULL DEFAULT NOW(),
-  check_out   TIMESTAMP,
-  marked_by   INT REFERENCES staff(id),
-  created_at  DATE DEFAULT CURRENT_DATE
-);
-```
+All edge function calls resolve their URL from `VITE_SUPABASE_URL` via
+`edgeFunctionUrl()` in `client/src/lib/supabase.js`.
 
-### `005_create_trainer_assignments.sql`
-```sql
-CREATE TABLE trainer_assignments (
-  id          SERIAL PRIMARY KEY,
-  trainer_id  INT REFERENCES staff(id),
-  member_id   INT REFERENCES members(id),
-  assigned_on DATE DEFAULT CURRENT_DATE
-);
-```
+**Edge function secrets** (`npx supabase secrets list --project-ref fmikzzectrzpyuhkmmcg`):
+only the Supabase-injected defaults (`SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`, etc.) are set. `RESEND_API_KEY` and the
+`VAPID_*` keys are not — see the Edge Functions table above.
 
-### `006_create_inventory.sql`
-```sql
-CREATE TABLE inventory (
-  id              SERIAL PRIMARY KEY,
-  item_name       VARCHAR(100) NOT NULL,
-  quantity        INT DEFAULT 0,
-  condition       VARCHAR(20) CHECK (condition IN ('good','fair','poor')),
-  purchase_date   DATE,
-  supplier        VARCHAR(100),
-  maintenance_due DATE,
-  low_stock_alert INT DEFAULT 2,
-  created_at      TIMESTAMP DEFAULT NOW()
-);
+---
+
+## Where things live
+
+```
+client/src/
+  pages/            One folder per portal section (Members, Staff, Member/, SuperAdmin/, Auth/, ...)
+  pages/Auth/        SetPasswordPage.jsx — shared invite-accept / password-reset landing page
+  data/             Small shared query helpers — currently just the two tables
+                     (staff, trainer_assignments) that have already shipped
+                     column-name bugs from being hand-written per page. Most
+                     pages still query Supabase directly; this folder is a
+                     start, not a completed migration.
+  lib/supabase.js    Supabase client + edgeFunctionUrl() helper
+  store/authStore.js Zustand — the only shared client state; everything
+                     else is fetched per-page
+
+supabase/
+  migrations/       Schema history (incomplete — see gap noted above)
+  functions/        All 8 live edge functions (complete as of this session)
+  scripts/          Operational SQL (reset_all_data.sql)
+  tests/database/   pgTAP RLS tests
 ```
 
 ---
 
-## 🔌 Backend API Routes
+## Status
 
-### Auth
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/login` | Staff login → returns JWT |
-| GET | `/api/auth/me` | Get current user profile |
+**2026-07-11, foundation-hardening pass:** dead Express/SQLite backend
+removed, hardcoded edge-function URLs centralized, migration tooling set
+up, tenant-isolation tests added, gym/member provisioning made idempotent.
 
-### Members
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/members` | List all (with search & status filter) |
-| POST | `/api/members` | Create new member |
-| GET | `/api/members/:id` | Single member profile |
-| PUT | `/api/members/:id` | Update member |
-| DELETE | `/api/members/:id` | Soft delete (set inactive) |
+**2026-07-11, auth-hardening pass (same day, continued):** invite-based
+onboarding for gym owners, members, *and* staff (no admin-set passwords
+except the explicit `reset-owner-password` break-glass tool);
+forgot-password flow; invite resend everywhere; live data wipe; all 4
+previously-undocumented edge functions recovered, reviewed, and (for the
+3 that provision logins) converted to invites; migration ledger
+reconciled; `gyms.owner_auth_id` pushed and confirmed live;
+`create-gym`/`create-member-login`/`create-staff-login`/`resend-gym-invite`
+deployed live.
 
-### Attendance
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/attendance` | Daily log (filter by date) |
-| POST | `/api/attendance/checkin` | Mark check-in |
-| PUT | `/api/attendance/:id/checkout` | Mark check-out |
-| GET | `/api/attendance/member/:id` | Monthly attendance per member |
-
-### Subscriptions
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/subscriptions/plans` | List all plans |
-| POST | `/api/subscriptions/plans` | Create plan |
-| GET | `/api/subscriptions` | All member subscriptions |
-| POST | `/api/subscriptions` | Assign plan to member |
-| PUT | `/api/subscriptions/:id` | Renew / expire |
-| GET | `/api/subscriptions/expiring` | Expiring within 7 days |
-
-### Staff
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/staff` | List all staff |
-| POST | `/api/staff` | Add staff member |
-| PUT | `/api/staff/:id` | Update staff |
-| DELETE | `/api/staff/:id` | Remove staff |
-| POST | `/api/staff/assign` | Assign trainer to member |
-
-### Inventory
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/inventory` | List all items |
-| POST | `/api/inventory` | Add item |
-| PUT | `/api/inventory/:id` | Update item |
-| DELETE | `/api/inventory/:id` | Remove item |
-| GET | `/api/inventory/alerts` | Low stock + maintenance due |
-
-### Reports
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/reports/summary` | Dashboard KPIs |
-| GET | `/api/reports/attendance` | Weekly/monthly chart data |
-| GET | `/api/reports/subscriptions` | Expiring + overdue list |
-| GET | `/api/reports/staff-attendance` | Staff attendance summary |
-| GET | `/api/reports/export/csv` | CSV export |
-
----
-
-## 🖥️ Frontend Pages & Components
-
-### 1. Dashboard (`/`)
-- KPI cards: Total active members, Today's attendance, Expiring soon, Low stock alerts
-- Attendance bar chart (last 7 days) using **Recharts**
-- Quick-action buttons: Mark attendance, Add member
-
-### 2. Members (`/members`)
-- Searchable & filterable table (active/inactive)
-- Add/Edit member modal with photo upload
-- Member detail page with subscription history and attendance summary
-
-### 3. Attendance (`/attendance`)
-- Date picker to view daily log
-- Search by name or member ID to mark check-in/check-out
-- Monthly view calendar per member
-
-### 4. Subscriptions (`/subscriptions`)
-- Plan management (create/edit plans)
-- Assign plan to member with start/end date
-- Expiry alert banner for subscriptions expiring ≤ 7 days
-- Overdue list view
-
-### 5. Staff (`/staff`)
-- Staff list with role badges
-- Add/edit staff form (role, shift info)
-- Trainer-to-member assignment UI
-
-### 6. Inventory (`/inventory`)
-- Equipment table with condition badge
-- Add/edit item drawer
-- Maintenance due & low stock alert panel
-
-### 7. Reports (`/reports`)
-- Total active members count card
-- Daily/weekly attendance **BarChart** (Recharts)
-- Expiring subscriptions table
-- Staff attendance summary table
-- **Export to CSV** button (calls `/api/reports/export/csv`)
-
----
-
-## 🔐 Authentication Flow
-
-- JWT-based auth stored in `localStorage`
-- Role-based access:
-  - **Admin** — full access to all modules
-  - **Trainer** — view members, mark attendance, view own assignments
-  - **Reception** — mark attendance, view subscriptions, member lookup
-- Protected routes in React using a `<PrivateRoute>` wrapper component
-- `axios` interceptor attaches `Authorization: Bearer <token>` to every request
-
-```js
-// client/src/api/axiosInstance.js
-import axios from 'axios';
-
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL });
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-export default api;
-```
-
----
-
-## 🚀 Cursor Development Workflow (Step-by-Step)
-
-> ✅ **PROJECT COMPLETE** — All phases implemented. Built with React 19 + Vite 8 + Tailwind CSS v4 (frontend) and Node.js + Express + **SQLite** (backend, zero-config, no PostgreSQL required).
-
-### Week 1–2 — Project Setup & Auth ✅
-- [x] Init Vite + React project, configure Tailwind CSS v4
-- [x] Init Express server, connected to **SQLite** (better-sqlite3, no install needed)
-- [x] Run database migrations — auto-runs on server start via `src/db/migrate.js`
-- [x] Build `/api/auth/login` endpoint with JWT (8h expiry)
-- [x] Build Login page UI + auth store (Zustand) — glassmorphism dark theme
-- [x] Set up protected routes (`<PrivateRoute>`) and sidebar layout with role-based nav
-
-### Week 3–4 — Members + Attendance (Phase 1 core) ✅
-- [x] Build Members CRUD API + UI (searchable table, add/edit modal, auto member code GYM####)
-- [x] Build Attendance API + check-in/check-out UI (daily log with duration tracking)
-- [x] Member search by name/ID/phone on attendance page with live dropdown
-
-### Week 5–6 — Subscriptions (Phase 1 complete) ✅
-- [x] Build Subscription Plans API + UI (create plans, price display)
-- [x] Assign plan to member + start/end date tracking
-- [x] Expiry alert logic — banner shown when subscriptions expiring ≤ 7 days
-- [x] Dashboard KPI cards (4 metrics) + Recharts attendance bar chart (last 7 days)
-
-### Week 7–8 — Buffer & Polish (Phase 1) ✅
-- [x] Form validation with `react-hook-form` on all modals (Members, Staff, Inventory, Subscriptions)
-- [x] Toast notifications (`react-hot-toast`) — success/error on all CRUD operations
-- [x] Mobile-responsive layout — flex sidebar + scrollable main content
-- [x] Role-based access enforcement — Admin/Trainer/Reception route guards + sidebar filtering
-
-### Week 9–10 — Staff + Inventory (Phase 2) ✅
-- [x] Staff CRUD API + UI with role badges (admin/trainer/reception) — card grid layout
-- [x] Trainer-to-member assignment UI + `/api/staff/assign` endpoint
-- [x] Inventory CRUD API + condition badges (good/fair/poor) + quantity tracking
-- [x] Maintenance & low-stock alert panel — dual alert cards with item lists
-
-### Week 11–14 — Reports + Export + Final Polish ✅
-- [x] Reports API endpoints (summary KPIs, attendance chart, subscription expiry, staff activity)
-- [x] CSV export — server-side generation, downloads as `gym-report-YYYY-MM-DD.csv`
-- [x] Staff attendance summary table (times marked, last active date)
-- [x] Final QA complete — SQLite adapter tested, login verified, all 6 modules operational
-
----
-
-## 🌐 Deployment (Recommended)
-
-| Layer | Service | Notes |
-|-------|---------|-------|
-| Frontend | **Vercel** or **Netlify** | Deploy `client/` |
-| Backend | **Railway** or **Render** | Deploy `server/` |
-| Database | **Railway PostgreSQL** or **Supabase** | Managed PostgreSQL |
-| File storage | **Cloudinary** (free tier) | Member photo uploads |
-
-### Environment Variables (Actual Working Values)
-
-**`client/.env`**
-```
-VITE_API_URL=http://localhost:3001/api
-```
-
-**`server/.env`**
-```
-PORT=3001
-DATABASE_URL=sqlite://local    # Uses SQLite — no PostgreSQL needed!
-JWT_SECRET=gym_management_super_secret_key_2024
-CLIENT_URL=http://localhost:5174
-```
-
-> ⚠️ **Note:** The original guide specified PostgreSQL. The implementation uses **SQLite** via `better-sqlite3` for zero-config local development. The DB file is auto-created at `server/data/gym.db`.
-
----
-
-## 💡 Cursor AI Prompts to Speed Up Development
-
-Use these prompts directly in Cursor to scaffold code fast:
-
-```
-"Generate an Express controller for CRUD operations on the members table 
-using node-postgres (pg). Table: members with columns id, full_name, phone, 
-email, status, fitness_goal, health_notes, created_at"
-
-"Create a React component for a members list page with Tailwind CSS. 
-Include a search bar, active/inactive filter tabs, and a data table with 
-columns: Photo, Name, Member ID, Phone, Status, Actions"
-
-"Write a PostgreSQL query to get attendance counts grouped by day 
-for the last 7 days, joining the members table for member name"
-
-"Create a React form using react-hook-form and zod for adding a new 
-member with fields: full_name, phone, email, dob, address, fitness_goal, 
-health_notes, status (active/inactive)"
-
-"Write an Express middleware that validates a JWT token and attaches 
-the user role (admin/trainer/reception) to req.user"
-```
-
----
-
-## ✅ Definition of Done — Per Module
-
-| Module | Status | Done When |
-|--------|--------|-----------|
-| **Members** | ✅ DONE | Add/edit/delete works, search & filter works, profile page shows subscription + attendance |
-| **Attendance** | ✅ DONE | Staff can mark check-in/out by name or ID, daily log view works, monthly view per member works |
-| **Subscriptions** | ✅ DONE | Plans created, assigned to members, expiry alerts show, history per member visible |
-| **Staff** | ✅ DONE | CRUD works, roles enforced in UI, trainer-member assignments visible |
-| **Inventory** | ✅ DONE | Items managed, maintenance reminders show, low-stock alerts trigger |
-| **Reports** | ✅ DONE | Dashboard KPIs load, attendance chart renders, CSV export downloads correctly |
-
----
-
-*Generated from the revised gym management plan — 6 modules, 2-phase build, no payment integration.*
-
----
-
-## 🏁 Implementation Summary
-
-| Item | Detail |
-|------|--------|
-| **Completed** | 2026-04-17 |
-| **Frontend URL** | http://localhost:5174 |
-| **Backend URL** | http://localhost:3001 |
-| **Database** | SQLite (`server/data/gym.db`) — zero config |
-| **Default Login** | admin@gym.com / admin123 |
-| **Quick Start** | Double-click `START.bat` |
-| **Total Modules** | 7 pages: Login, Dashboard, Members, Attendance, Subscriptions, Staff, Inventory, Reports |
-| **Total API Routes** | 30+ REST endpoints across 6 routers |
-| **Auth** | JWT (8h), role-based: admin / trainer / reception |
+**Still open:**
+- Full historical schema baseline (34 untracked migrations' worth) —
+  needs `db dump`/`db pull` to succeed against Docker, which fought this
+  environment the whole session. Try again somewhere with a more stable
+  Docker + network path.
+- Add `/set-password` to the Supabase Redirect URLs allow-list (dashboard
+  config, not done this session — see Authentication above). **Invite
+  links won't route correctly until this is done.**
+- `RESEND_API_KEY` / `VAPID_*` secrets, if the reminder-email and
+  push-notification features should actually fire.
+- Extending the shared query layer (`client/src/data/`) past the two
+  files that have already shipped bugs.
+- CI, broader test coverage, observability.

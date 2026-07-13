@@ -15,4 +15,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+// Single source of truth for the edge function base URL — derived from the
+// same env var as the Supabase client, so dev/staging/prod each resolve
+// correctly instead of a project ref being hardcoded per call site.
+export function edgeFunctionUrl(name) {
+  return `${supabaseUrl}/functions/v1/${name}`;
+}
+
 export default supabase;

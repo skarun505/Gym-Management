@@ -1,13 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw, Camera, Loader2, AlertTriangle, Bell, Check, Lock, Clock, Timer, ChevronRight, Filter, ShieldAlert } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { supabase } from '../../lib/supabase';
+import { supabase, edgeFunctionUrl } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { usePlanGate } from '../../hooks/usePlanGate';
 import { UpgradeModal } from '../../components/PlanGate';
-
-const CREATE_LOGIN_URL = 'https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/create-member-login';
 
 // ── Copy-to-clipboard helper hook ────────────────────────────
 function useCopy() {
@@ -21,27 +19,9 @@ function useCopy() {
   return { copied, copy };
 }
 
-// ── Credentials Modal ─────────────────────────────────────────
-function CredentialsModal({ creds, onClose }) {
+// ── Invite Sent Modal ─────────────────────────────────────────
+function InviteSentModal({ result, onClose }) {
   const { copied, copy } = useCopy();
-
-  const Field = ({ label, value, copyKey }) => (
-    <div className="bg-dark-700 rounded-xl p-3 flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-gray-500 text-[11px] font-medium uppercase tracking-wider">{label}</p>
-        <p className="text-white font-mono font-semibold text-sm mt-0.5 truncate">{value}</p>
-      </div>
-      <button
-        onClick={() => copy(copyKey, value)}
-        className="flex-shrink-0 p-2 rounded-lg hover:bg-white/10 transition-colors"
-        title="Copy"
-      >
-        {copied[copyKey]
-          ? <CheckCheck className="w-4 h-4 text-emerald-400" />
-          : <Copy className="w-4 h-4 text-gray-400" />}
-      </button>
-    </div>
-  );
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -53,8 +33,8 @@ function CredentialsModal({ creds, onClose }) {
               <ShieldCheck className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-white font-bold">Login Created!</h2>
-              <p className="text-gray-500 text-xs">{creds.memberName} · {creds.memberCode}</p>
+              <h2 className="text-white font-bold">Invite Sent!</h2>
+              <p className="text-gray-500 text-xs">{result.memberName} · {result.memberCode}</p>
             </div>
           </div>
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
@@ -63,35 +43,33 @@ function CredentialsModal({ creds, onClose }) {
         <div className="p-6 space-y-4">
           {/* Success banner */}
           <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-center">
-            <p className="text-emerald-400 text-sm font-semibold">✓ Account created successfully</p>
-            <p className="text-emerald-400/60 text-xs mt-1">Share these credentials with the member</p>
+            <p className="text-emerald-400 text-sm font-semibold">
+              {result.resumed ? '✓ Login finished setting up' : '✓ Invite email sent'}
+            </p>
+            <p className="text-emerald-400/60 text-xs mt-1">
+              {result.memberName} will get an email to set their own password.
+            </p>
           </div>
 
-          {/* Credential fields */}
-          <div className="space-y-2">
-            <Field label="Email / Username" value={creds.email} copyKey="email" />
-            <Field label="Password" value={creds.password} copyKey="password" />
+          <div className="bg-dark-700 rounded-xl p-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-gray-500 text-[11px] font-medium uppercase tracking-wider">Invited Email</p>
+              <p className="text-white font-mono font-semibold text-sm mt-0.5 truncate">{result.email}</p>
+            </div>
+            <button
+              onClick={() => copy('email', result.email)}
+              className="flex-shrink-0 p-2 rounded-lg hover:bg-white/10 transition-colors"
+              title="Copy"
+            >
+              {copied.email
+                ? <CheckCheck className="w-4 h-4 text-emerald-400" />
+                : <Copy className="w-4 h-4 text-gray-400" />}
+            </button>
           </div>
 
-          {/* Copy all button */}
-          <button
-            onClick={() => copy('all', `Email: ${creds.email}\nPassword: ${creds.password}`)}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 transition-colors text-sm font-semibold"
-          >
-            {copied.all
-              ? <><CheckCheck className="w-4 h-4 text-emerald-400" /> Copied!</>
-              : <><Copy className="w-4 h-4" /> Copy Both Credentials</>}
-          </button>
-
-          {/* Warning */}
-          <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl p-3">
-            <p className="text-amber-400 text-xs font-semibold mb-1 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Important</p>
-            <ul className="text-amber-300/70 text-xs space-y-1 list-disc list-inside">
-              <li>Share credentials privately (WhatsApp / in-person)</li>
-              <li>Ask member to change password after first login</li>
-              <li>Member can now access the Member Portal</li>
-            </ul>
-          </div>
+          <p className="text-gray-500 text-xs">
+            Link didn't arrive, or expired? Open "Create Login" for this member again to resend it.
+          </p>
 
           <button onClick={onClose} className="btn-primary w-full">Done</button>
         </div>
@@ -102,18 +80,14 @@ function CredentialsModal({ creds, onClose }) {
 
 // ── Create Login Modal ─────────────────────────────────────────
 function CreateLoginModal({ member, onClose, onSuccess }) {
-  const [password, setPassword] = useState('');
   const [email, setEmail] = useState(member.email || '');
   const [loading, setLoading] = useState(false);
 
-  // If no email, show info that phone will be used as virtual login
   const hasEmail = !!email.trim();
-  const willUsePhone = !hasEmail && !!member.phone;
-  const canSubmit = hasEmail || willUsePhone;
 
   const handleCreate = async () => {
-    if (!canSubmit) {
-      toast.error('Please enter an email address or ensure the member has a phone number.');
+    if (!hasEmail) {
+      toast.error('An email address is required to send a login invite.');
       return;
     }
     setLoading(true);
@@ -122,7 +96,7 @@ function CreateLoginModal({ member, onClose, onSuccess }) {
       const token = sessionData?.session?.access_token;
       if (!token) throw new Error('Not authenticated. Please log in again.');
 
-      const res = await fetch(CREATE_LOGIN_URL, {
+      const res = await fetch(edgeFunctionUrl('create-member-login'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -131,12 +105,19 @@ function CreateLoginModal({ member, onClose, onSuccess }) {
         },
         body: JSON.stringify({
           memberId: member.id,
-          password: password || undefined,
-          emailOverride: hasEmail ? email.trim() : undefined,
+          email: email.trim(),
+          redirectTo: `${window.location.origin}/set-password`,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create login');
+      if (!res.ok) throw new Error(data.error || 'Failed to send login invite');
+
+      if (data.manualLink) {
+        await navigator.clipboard.writeText(data.manualLink);
+        toast.success('Invite link copied — automatic email wasn\'t available, share it with the member directly.');
+        onClose();
+        return;
+      }
       onSuccess(data);
     } catch (err) {
       toast.error(err.message);
@@ -172,42 +153,28 @@ function CreateLoginModal({ member, onClose, onSuccess }) {
               className="input-field"
               placeholder="member@email.com"
             />
-            {!hasEmail && member.phone && (
-              <p className="text-amber-400 text-[11px] mt-1.5 flex items-center gap-1">
+            <p className="text-gray-600 text-[11px] mt-1.5">
+              We'll email this address a link to set their own password — no password to generate or share yourself.
+            </p>
+            {!hasEmail && (
+              <p className="text-amber-400 text-[11px] mt-1 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                No email — member will log in using phone: <span className="font-mono ml-1">{member.phone}</span>
+                An email address is required — portal login can't be set up by phone number alone.
               </p>
             )}
-            {!hasEmail && !member.phone && (
-              <p className="text-red-400 text-[11px] mt-1.5">
-                Member has no email or phone. Please add one first.
-              </p>
-            )}
-          </div>
-
-          {/* Password */}
-          <div>
-            <label className="label">Password <span className="text-gray-600 font-normal">(leave blank to auto-generate)</span></label>
-            <input
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              type="text"
-              className="input-field font-mono"
-              placeholder="auto-generated if blank"
-            />
           </div>
 
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
             <button
               onClick={handleCreate}
-              disabled={loading || !canSubmit}
+              disabled={loading || !hasEmail}
               className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {loading
                 ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 : <KeyRound className="w-4 h-4" />}
-              Create Login
+              Send Invite
             </button>
           </div>
         </div>
@@ -231,7 +198,7 @@ function computeEndDate(startDate, duration) {
 }
 
 // ── Add / Edit Member Modal ───────────────────────────────────
-function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
+function MemberModal({ member, gymId, gymCode, plans, onClose, onSave, memberCount, isAtMemberLimit, onLimitReached }) {
   const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm({
     defaultValues: member
       ? {
@@ -380,24 +347,13 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
     try {
       let memberId = member?.id;
 
-      if (member?.id) {
-        // Update existing
-        const { error } = await supabase.from('members').update({
-          full_name:     data.full_name,
-          phone:         data.phone,
-          email:         data.email,
-          dob:           data.dob || null,
-          address:       data.address,
-          photo_url:     data.photo_url || null,
-          fitness_goal:  data.fitness_goal,
-          health_notes:  data.health_notes,
-          status:        data.status,
-          joined_at:     data.joined_at || null,
-          admission_fee: data.admission_fee ? Number(data.admission_fee) : null,
-        }).eq('id', member.id);
-        if (error) throw error;
-        toast.success('Member updated!');
-      } else {
+      if (!member?.id) {
+        // — Plan gate: enforce member limit at submit time (not just on the button)
+        if (isAtMemberLimit && isAtMemberLimit(memberCount ?? 0)) {
+          onLimitReached?.();
+          return;
+        }
+
         // Insert new member
         const { data: newMember, error } = await supabase.from('members').insert({
           gym_id:        gymId,
@@ -439,16 +395,43 @@ function MemberModal({ member, gymId, gymCode, plans, onClose, onSave }) {
         }
         toast.success('Member added!');
 
-        // 🔔 Fire welcome email (non-blocking, silent fail)
+        // � udd14 Fire welcome email (non-blocking, silent fail)
+        // Must include Authorization header — anon key alone is not sufficient.
         if (data.email) {
-          const { data: { session } } = await supabase.auth.getSession();
-          fetch('https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/send-reminders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
-            body: JSON.stringify({ welcome: true, member_id: memberId }),
-          }).catch(() => {}); // silent fail — email is bonus
+          supabase.auth.getSession().then(({ data: sessionData }) => {
+            const token = sessionData?.session?.access_token;
+            if (!token) return;
+            fetch(edgeFunctionUrl('send-reminders'), {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+              },
+              body: JSON.stringify({ welcome: true, member_id: memberId }),
+            }).catch(() => {}); // silent fail — email is a bonus
+          }).catch(() => {});
         }
+
+      } else {
+        // Update existing member
+        const { error } = await supabase.from('members').update({
+          full_name:     data.full_name,
+          phone:         data.phone,
+          email:         data.email,
+          dob:           data.dob || null,
+          address:       data.address,
+          photo_url:     data.photo_url || null,
+          fitness_goal:  data.fitness_goal,
+          health_notes:  data.health_notes,
+          status:        data.status,
+          joined_at:     data.joined_at || null,
+          admission_fee: data.admission_fee ? Number(data.admission_fee) : null,
+        }).eq('id', member.id);
+        if (error) throw error;
+        toast.success('Member updated!');
       }
+
       onSave();
     } catch (err) {
       toast.error(err.message || 'Something went wrong');
@@ -1066,7 +1049,7 @@ export default function MembersPage() {
   const [modalMember,  setModalMember]  = useState(undefined);
   // Login creation state
   const [loginTarget,  setLoginTarget]  = useState(null); // member object for CreateLoginModal
-  const [credentials,  setCredentials]  = useState(null); // response from edge fn → CredentialsModal
+  const [credentials,  setCredentials]  = useState(null); // response from edge fn → InviteSentModal
   const { user } = useAuthStore();
   const { canAccess: _canAccess, isAtMemberLimit, maxMembers, plan } = usePlanGate();
   const [showUpgrade,  setShowUpgrade]  = useState(false);
@@ -1406,6 +1389,9 @@ export default function MembersPage() {
           gymId={user.gym_id}
           gymCode={user.gym?.gym_code}
           plans={plans}
+          memberCount={members.length}
+          isAtMemberLimit={isAtMemberLimit}
+          onLimitReached={() => { setModalMember(undefined); setShowUpgrade(true); }}
           onClose={() => setModalMember(undefined)}
           onSave={() => { setModalMember(undefined); fetchMembers(); }}
         />
@@ -1424,10 +1410,10 @@ export default function MembersPage() {
         />
       )}
 
-      {/* Credentials display modal */}
+      {/* Invite sent modal */}
       {credentials && (
-        <CredentialsModal
-          creds={credentials}
+        <InviteSentModal
+          result={credentials}
           onClose={() => setCredentials(null)}
         />
       )}

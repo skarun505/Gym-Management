@@ -5,6 +5,7 @@ import {
   TrendingUp, Zap, MessageSquare, Star,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { trainerAssignmentsForTrainer } from '../../data/trainerAssignments';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 
@@ -61,17 +62,12 @@ export default function StaffDashboard() {
         .eq('gym_id', user.gym_id).gte('created_at', today);
 
       // If trainer → get PT members
-      // NOTE: trainer_assignments.trainer_id stores the auth profile_id (UUID),
-      // NOT the staff table row id. TrainerAssignments.jsx inserts trainer.profile_id.
       let ptMembers = [];
       if (staffRow.role === 'trainer' || user.sub_role === 'trainer') {
         const trainerId = staffRow.profile_id || user.id;
-        const { data: assignments } = await supabase
-          .from('trainer_assignments')
-          .select('*, members(id, full_name, photo_url, fitness_goal, status, member_code)')
-          .eq('trainer_id', trainerId)
-          .eq('gym_id', user.gym_id)
-          .eq('is_active', true);
+        const { data: assignments } = await trainerAssignmentsForTrainer(
+          user.gym_id, trainerId, '*, members(id, full_name, photo_url, fitness_goal, status, member_code)'
+        ).eq('is_active', true);
         ptMembers = (assignments || []).map(a => a.members).filter(Boolean);
       }
       setMembers(ptMembers);

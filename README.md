@@ -118,14 +118,19 @@ GYM Management/
 │       ├── store/           # Zustand auth store
 │       ├── lib/             # Supabase client
 │       └── utils/           # subscriptionReminders.js
-├── supabase/
-│   ├── functions/           # Edge functions (Deno)
-│   │   ├── create-gym/
-│   │   ├── process-checkin/
-│   │   └── create-member-login/
-│   └── migrations/          # SQL migration history
-└── server/                  # Legacy Express (reference only)
+└── supabase/
+    ├── functions/           # Edge functions (Deno) — see Development guide.md
+    │   │                    # for 3 more that are live but not in this repo
+    │   ├── create-gym/
+    │   ├── process-checkin/
+    │   └── create-member-login/
+    ├── migrations/          # SQL migration history (see Development guide.md
+    │                        # for known gaps vs. the live schema)
+    └── tests/database/      # pgTAP RLS tests
 ```
+
+See [Development guide.md](Development%20guide.md) for the full architecture
+notes, known schema gaps, and how to run migrations/tests locally.
 
 ---
 

@@ -5,7 +5,7 @@ import {
   Mail, Clock, IndianRupee, Cake, KeyRound, CheckCircle2, Lock
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { supabase } from '../../lib/supabase';
+import { supabase, edgeFunctionUrl } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { usePlanGate } from '../../hooks/usePlanGate';
@@ -38,7 +38,7 @@ function CreateLoginModal({ staff, onClose, onSuccess }) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Session expired — please log in again.');
-      const res = await fetch('https://fmikzzectrzpyuhkmmcg.supabase.co/functions/v1/create-staff-login', {
+      const res = await fetch(edgeFunctionUrl('create-staff-login'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,

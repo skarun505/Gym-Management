@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Zap, ArrowRight, Download, Smartphone, Share2 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
+import { supabase } from '../../lib/supabase';
+import toast from 'react-hot-toast';
 
 // ── PWA helpers ─────────────────────────────────────────────────
 function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream; }
@@ -27,6 +29,29 @@ export default function LoginPage() {
   const [focused,    setFocused]    = useState('');
   const { login, isLoading, error } = useAuthStore();
   const navigate = useNavigate();
+
+  // ── Forgot password ──
+  const [showForgot,    setShowForgot]    = useState(false);
+  const [forgotEmail,   setForgotEmail]   = useState('');
+  const [forgotSending, setForgotSending] = useState(false);
+  const [forgotSent,    setForgotSent]    = useState(false);
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail.includes('@')) { toast.error('Enter the email you log in with'); return; }
+    setForgotSending(true);
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+        redirectTo: `${window.location.origin}/set-password`,
+      });
+      if (resetErr) throw resetErr;
+      setForgotSent(true);
+    } catch (err) {
+      toast.error(err.message || 'Could not send reset email');
+    } finally {
+      setForgotSending(false);
+    }
+  };
 
   // PWA install state
   // 'idle'       → always visible, no native prompt yet (show manual guide)
@@ -186,7 +211,46 @@ export default function LoginPage() {
                 {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => { setShowForgot(s => !s); setForgotSent(false); }}
+              style={styles.forgotLink}
+            >
+              Forgot password?
+            </button>
           </div>
+
+          {/* Forgot password panel */}
+          {showForgot && (
+            <div style={styles.forgotPanel}>
+              {forgotSent ? (
+                <p style={styles.forgotSentText}>
+                  ✓ If an account exists for that email, a reset link is on its way.
+                </p>
+              ) : (
+                <>
+                  <p style={styles.forgotHint}>We'll email you a link to set a new password.</p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="your@email.com"
+                      style={styles.forgotInput}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleForgotSubmit}
+                      disabled={forgotSending}
+                      style={{ ...styles.forgotSendBtn, opacity: forgotSending ? 0.7 : 1 }}
+                    >
+                      {forgotSending ? '…' : 'Send'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Submit button */}
           <button
@@ -524,6 +588,61 @@ const styles = {
     padding: 4,
     display: 'flex',
     alignItems: 'center',
+  },
+
+  // Forgot password
+  forgotLink: {
+    display: 'block',
+    marginTop: 8,
+    marginLeft: 'auto',
+    background: 'none',
+    border: 'none',
+    color: 'rgba(196,132,252,0.75)',
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: 'pointer',
+    padding: 0,
+  },
+  forgotPanel: {
+    marginTop: 10,
+    padding: '12px 14px',
+    borderRadius: 14,
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.08)',
+  },
+  forgotHint: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.45)',
+    margin: '0 0 8px',
+  },
+  forgotSentText: {
+    fontSize: 12.5,
+    color: '#6ee7b7',
+    margin: 0,
+    fontWeight: 500,
+    lineHeight: 1.5,
+  },
+  forgotInput: {
+    flex: 1,
+    minWidth: 0,
+    background: 'rgba(255,255,255,0.05)',
+    border: '1.5px solid rgba(255,255,255,0.1)',
+    borderRadius: 10,
+    padding: '9px 12px',
+    color: '#fff',
+    fontSize: 13,
+    outline: 'none',
+  },
+  forgotSendBtn: {
+    padding: '9px 16px',
+    borderRadius: 10,
+    border: 'none',
+    background: 'linear-gradient(135deg, #7c3aed, #a21cce)',
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 
   // Submit
