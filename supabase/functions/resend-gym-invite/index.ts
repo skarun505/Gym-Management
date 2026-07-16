@@ -1,9 +1,5 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/cors.ts';
 
 /**
  * resend-gym-invite
@@ -13,12 +9,13 @@ const corsHeaders = {
  * Body: { gymId: string, redirectTo?: string }
  */
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  const cors = corsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...cors, 'Content-Type': 'application/json' },
     });
 
   try {
@@ -61,6 +58,9 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!inviteErr) {
+      await admin.from('audit_logs').insert({
+        actor_id: caller.id, action: 'resend_gym_invite', target_gym_id: gymId, detail: { resent: true },
+      });
       return json({ success: true, resent: true, email: gym.email });
     }
 
@@ -77,6 +77,10 @@ Deno.serve(async (req: Request) => {
     if (linkErr || !linkData?.properties?.action_link) {
       return json({ error: inviteErr.message || 'Could not resend invite' }, 500);
     }
+
+    await admin.from('audit_logs').insert({
+      actor_id: caller.id, action: 'resend_gym_invite', target_gym_id: gymId, detail: { resent: false, manualLink: true },
+    });
 
     return json({
       success: true,

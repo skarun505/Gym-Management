@@ -1,9 +1,5 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders as buildCorsHeaders } from '../_shared/cors.ts';
 
 // ─── Achievement condition checker ──────────────────────────────
 function checkAchievements({
@@ -79,6 +75,7 @@ function checkAchievements({
 
 // ─── Main handler ───────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
+  const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

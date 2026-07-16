@@ -95,6 +95,22 @@ Deno.serve(async (req: Request) => {
     return new Response('Method not allowed', { status: 405 });
   }
 
+  // No platform-level restriction gates this endpoint, so it must check
+  // the caller itself — otherwise anyone holding the public anon key
+  // could push arbitrary notification content to any gym's members.
+  const jwt = (req.headers.get('Authorization') ?? '').replace('Bearer ', '');
+  if (!jwt) return new Response('Unauthorized', { status: 401 });
+
+  const { data: { user: caller }, error: authErr } = await supabase.auth.getUser(jwt);
+  if (authErr || !caller) return new Response('Invalid token', { status: 401 });
+
+  const { data: callerProfile } = await supabase
+    .from('profiles').select('role, gym_id').eq('id', caller.id).single();
+  const callerRole = callerProfile?.role ?? '';
+  if (!['gym_owner', 'staff', 'super_admin'].includes(callerRole)) {
+    return new Response('Forbidden', { status: 403 });
+  }
+
   let body: {
     gym_id?: string;
     member_id?: string;
@@ -143,7 +159,7 @@ Deno.serve(async (req: Request) => {
 
   let sent = 0;
   for (const sub of subs) {
-    const ok = await sendPush(sub.endpoint, sub.p256dh, sub.auth_key, payload);
+    const ok = await sendPush(sub.endpoint, sub.p256dh, sub.auth, payload);
     if (ok) sent++;
   }
 

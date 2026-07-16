@@ -1,16 +1,12 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+import { corsHeaders } from '../_shared/cors.ts';
 
 Deno.serve(async (req: Request) => {
+  const cors = corsHeaders(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
   try {
     const admin = createClient(
@@ -52,6 +48,13 @@ Deno.serve(async (req: Request) => {
       { password: newPassword }
     );
     if (updateErr) throw updateErr;
+
+    await admin.from('audit_logs').insert({
+      actor_id: caller.id,
+      action: 'reset_owner_password',
+      target_gym_id: gymId,
+      target_id: ownerProfile.id,
+    });
 
     return json({ success: true, ownerName: ownerProfile.full_name });
 

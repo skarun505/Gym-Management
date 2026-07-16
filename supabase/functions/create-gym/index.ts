@@ -1,9 +1,5 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/cors.ts';
 
 /**
  * create-gym
@@ -14,14 +10,15 @@ const corsHeaders = {
  * the email to an owner who hasn't accepted yet.
  */
 Deno.serve(async (req: Request) => {
+  const cors = corsHeaders(req);
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: cors });
   }
 
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...cors, 'Content-Type': 'application/json' },
     });
 
   try {
@@ -158,6 +155,13 @@ Deno.serve(async (req: Request) => {
         { gym_id: gym.id, plan_name: 'Annual', duration: 'yearly', price: 7999 },
       ]);
     }
+
+    await supabaseAdmin.from('audit_logs').insert({
+      actor_id: user.id,
+      action: 'create_gym',
+      target_gym_id: gym.id,
+      detail: { gymName, email },
+    });
 
     return json({
       success: true,

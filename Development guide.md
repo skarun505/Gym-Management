@@ -254,15 +254,24 @@ reconciled; `gyms.owner_auth_id` pushed and confirmed live;
 deployed live.
 
 **Still open:**
-- Full historical schema baseline (34 untracked migrations' worth) —
-  needs `db dump`/`db pull` to succeed against Docker, which fought this
-  environment the whole session. Try again somewhere with a more stable
-  Docker + network path.
-- Add `/set-password` to the Supabase Redirect URLs allow-list (dashboard
-  config, not done this session — see Authentication above). **Invite
-  links won't route correctly until this is done.**
-- `RESEND_API_KEY` / `VAPID_*` secrets, if the reminder-email and
-  push-notification features should actually fire.
-- Extending the shared query layer (`client/src/data/`) past the two
-  files that have already shipped bugs.
-- CI, broader test coverage, observability.
+- VAPID keys (`VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`) not set — `web-push-notify` remains inert until
+  these are generated and set. Use `npx web-push generate-vapid-keys` and then `npx supabase secrets set VAPID_PRIVATE_KEY=... VAPID_PUBLIC_KEY=... VAPID_SUBJECT=mailto:you@yourdomain.com --project-ref fmikzzectrzpyuhkmmcg`.
+- Extending `client/src/data/` to cover member-portal tables (`nutrition_logs`, `progress_logs`, `diet_charts`, `workout_plans`).
+- CI, broader test coverage, observability (Sentry etc.).
+- **RLS policies are not recoverable from this repo.** The 34 original migrations that created `is_super_admin()`/`get_my_role()`/tenant-isolation policies were reconciled out of the ledger before their SQL was captured — pull the live policy set via Dashboard → Database → Policies (or `supabase db pull` once Docker works here) and commit it as a new migration. Until then, RLS is unverified-from-code.
+- No super_admin bootstrap path exists in the app — every super_admin account is created by hand via SQL (see Security audit below). Fine for a single-operator platform; revisit if more than one person needs this role.
+
+**Completed 2026-07-14 (second hardening pass):**
+- `RESEND_API_KEY` was already set (2026-07-13) — `send-reminders` will fire when called.
+- Supabase Auth `site_url` updated to `https://gym-management-sigma-two.vercel.app`.
+- `/set-password` added to `uri_allow_list` — invite and password-reset email links now route correctly.
+- **Bug fix**: `NotificationBell.jsx` was selecting `name` from `inventory` (column doesn't exist — is `item_name`). Fixed.
+- Schema baseline migration committed: `supabase/migrations/20260714000000_schema_baseline_documentation.sql` — all 29 live tables documented with correct column names.
+- `client/src/data/` expanded: `members.js`, `subscriptions.js`, `feePayments.js`, `inventory.js`, `attendance.js`, `announcements.js`, `staff.js`, `index.js` all added with production-verified column names.
+
+**Completed 2026-07-14 (security audit / third hardening pass):**
+- **Fixed**: `send-reminders` and `web-push-notify` had zero authorization checks — any holder of the public anon key (visible in the deployed JS bundle) could call them directly to mass-trigger member emails or, once VAPID is configured, push arbitrary notification content to any gym. Both now require a valid caller JWT + `gym_owner`/`staff`/`super_admin` role, and `send-reminders`' `welcome` path now checks the target member belongs to the caller's own gym (was an unscoped cross-tenant lookup).
+- CORS tightened on all 7 HTTP-facing edge functions: `Access-Control-Allow-Origin: '*'` replaced with an allow-list (`supabase/functions/_shared/cors.ts`) restricted to the production Vercel domain and local dev.
+- Added `audit_logs` table (`supabase/migrations/20260714010000_add_audit_logs.sql`, RLS-gated to `super_admin` read-only) and wired writes into `create-gym`, `reset-owner-password`, `resend-gym-invite` — these three mutate other people's accounts/gyms and previously left no trail.
+- Confirmed (not fixed — no issue found): no client code path can write `profiles.role`; the anon key is the only client-side secret and is meant to be public; `.env` files are correctly gitignored and were never committed.
+

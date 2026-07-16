@@ -147,6 +147,24 @@ async function logNotification(
 
 // ── Main handler ─────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
+  // This endpoint has no platform-level access restriction (it's meant
+  // to be reachable from the browser with the caller's own session), so
+  // it must authenticate and authorize itself — same pattern as the
+  // other edge functions. Without this, anyone holding the public anon
+  // key could trigger it directly.
+  const jwt = (req.headers.get('Authorization') ?? '').replace('Bearer ', '');
+  if (!jwt) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+
+  const { data: { user: caller }, error: authErr } = await supabase.auth.getUser(jwt);
+  if (authErr || !caller) return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+
+  const { data: callerProfile } = await supabase
+    .from('profiles').select('role, gym_id').eq('id', caller.id).single();
+  const callerRole = callerProfile?.role ?? '';
+  if (!['gym_owner', 'staff', 'super_admin'].includes(callerRole)) {
+    return new Response(JSON.stringify({ error: 'Only gym staff can trigger notifications' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+  }
+
   const today      = new Date().toISOString().split('T')[0];
   const in1day     = new Date(Date.now() + 1  * 86400000).toISOString().split('T')[0];
   const in3days    = new Date(Date.now() + 3  * 86400000).toISOString().split('T')[0];
@@ -156,6 +174,16 @@ Deno.serve(async (req: Request) => {
   // Check for specific member IDs passed (e.g. welcome trigger)
   let body: Record<string, any> = {};
   try { body = await req.json(); } catch { /* no body */ }
+
+  // Welcome emails target one specific member — enforce tenant isolation
+  // so a staff member of gym A can't fire (or spam) emails to gym B's members.
+  if (body.welcome && body.member_id && callerRole !== 'super_admin') {
+    const { data: targetMember } = await supabase
+      .from('members').select('gym_id').eq('id', body.member_id).maybeSingle();
+    if (!targetMember || targetMember.gym_id !== callerProfile?.gym_id) {
+      return new Response(JSON.stringify({ error: 'Member not found in your gym' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
 
   const results: Record<string, any> = {
     expiry_1d: 0, expiry_3d: 0, expiry_7d: 0,
