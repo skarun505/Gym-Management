@@ -151,10 +151,10 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. Insert attendance. The unique index on (member_id, created_at)
-    // makes this the real duplicate guard — the SELECT above is just a
-    // friendly fast path; two concurrent requests both pass it, and the
-    // second insert fails with 23505 here.
+    // 2. Insert attendance. The partial unique index (one open check-in per
+    // member per day) makes this the real duplicate guard — the SELECT above
+    // is just a friendly fast path; two concurrent requests both pass it,
+    // and the second insert fails with 23505 here.
     const { error: attendErr } = await supabaseAdmin.from('attendance').insert({
       gym_id: gymId, member_id: memberId,
       check_in: now.toISOString(), marked_by: user.id, created_at: today,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, X, Edit2, Trash2, AlertTriangle, Wrench, Package } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../lib/supabase';
+import { listInventory } from '../../data';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { usePlanGate } from '../../hooks/usePlanGate';
@@ -125,11 +126,7 @@ export default function InventoryPage() {
     if (!user?.gym_id) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('*')
-        .eq('gym_id', user.gym_id)
-        .order('item_name');
+      const { data, error } = await listInventory(user.gym_id);
       if (error) throw error;
       setItems(data || []);
     } catch { toast.error('Failed to load inventory'); }

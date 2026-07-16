@@ -1,1042 +1,17 @@
-import { useEffect, useState, useRef } from 'react';
-import { Search, Plus, UserCheck, UserX, X, Edit2, Trash2, CreditCard, ChevronDown, KeyRound, Copy, CheckCheck, ShieldCheck, Save, Calendar, RefreshCw, Camera, Loader2, AlertTriangle, Bell, Check, Lock, Clock, Timer, ChevronRight, Filter, ShieldAlert } from 'lucide-react';
-import { useForm } from 'react-hook-form';
-import { supabase, edgeFunctionUrl } from '../../lib/supabase';
+import { useEffect, useState } from 'react';
+import { Search, Plus, UserCheck, UserX, Edit2, Trash2, KeyRound, ShieldCheck, AlertTriangle, Bell, Check, Lock, Clock, Timer, ChevronDown } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { usePlanGate } from '../../hooks/usePlanGate';
 import { UpgradeModal } from '../../components/PlanGate';
-
-// ── Copy-to-clipboard helper hook ────────────────────────────
-function useCopy() {
-  const [copied, setCopied] = useState({});
-  const copy = (key, text) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(p => ({ ...p, [key]: true }));
-      setTimeout(() => setCopied(p => ({ ...p, [key]: false })), 2000);
-    });
-  };
-  return { copied, copy };
-}
-
-// ── Invite Sent Modal ─────────────────────────────────────────
-function InviteSentModal({ result, onClose }) {
-  const { copied, copy } = useCopy();
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content max-w-md" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="p-6 border-b border-white/5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <h2 className="text-white font-bold">Invite Sent!</h2>
-              <p className="text-gray-500 text-xs">{result.memberName} · {result.memberCode}</p>
-            </div>
-          </div>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-
-        <div className="p-6 space-y-4">
-          {/* Success banner */}
-          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-center">
-            <p className="text-emerald-400 text-sm font-semibold">
-              {result.resumed ? '✓ Login finished setting up' : '✓ Invite email sent'}
-            </p>
-            <p className="text-emerald-400/60 text-xs mt-1">
-              {result.memberName} will get an email to set their own password.
-            </p>
-          </div>
-
-          <div className="bg-dark-700 rounded-xl p-3 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-gray-500 text-[11px] font-medium uppercase tracking-wider">Invited Email</p>
-              <p className="text-white font-mono font-semibold text-sm mt-0.5 truncate">{result.email}</p>
-            </div>
-            <button
-              onClick={() => copy('email', result.email)}
-              className="flex-shrink-0 p-2 rounded-lg hover:bg-white/10 transition-colors"
-              title="Copy"
-            >
-              {copied.email
-                ? <CheckCheck className="w-4 h-4 text-emerald-400" />
-                : <Copy className="w-4 h-4 text-gray-400" />}
-            </button>
-          </div>
-
-          <p className="text-gray-500 text-xs">
-            Link didn't arrive, or expired? Open "Create Login" for this member again to resend it.
-          </p>
-
-          <button onClick={onClose} className="btn-primary w-full">Done</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Create Login Modal ─────────────────────────────────────────
-function CreateLoginModal({ member, onClose, onSuccess }) {
-  const [email, setEmail] = useState(member.email || '');
-  const [loading, setLoading] = useState(false);
-
-  const hasEmail = !!email.trim();
-
-  const handleCreate = async () => {
-    if (!hasEmail) {
-      toast.error('An email address is required to send a login invite.');
-      return;
-    }
-    setLoading(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) throw new Error('Not authenticated. Please log in again.');
-
-      const res = await fetch(edgeFunctionUrl('create-member-login'), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          memberId: member.id,
-          email: email.trim(),
-          redirectTo: `${window.location.origin}/set-password`,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to send login invite');
-
-      if (data.manualLink) {
-        await navigator.clipboard.writeText(data.manualLink);
-        toast.success('Invite link copied — automatic email wasn\'t available, share it with the member directly.');
-        onClose();
-        return;
-      }
-      onSuccess(data);
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content max-w-sm" onClick={e => e.stopPropagation()}>
-        <div className="p-6 border-b border-white/5 flex items-center justify-between">
-          <div>
-            <h2 className="text-white font-bold flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-primary-400" />
-              Create Login
-            </h2>
-            <p className="text-gray-500 text-xs mt-0.5">{member.full_name}</p>
-          </div>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-        <div className="p-6 space-y-4">
-          {/* Email field — editable */}
-          <div>
-            <label className="label">
-              Email (Login ID)
-              {!member.email && <span className="text-amber-400 font-normal ml-1 text-xs">— not saved yet</span>}
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="input-field"
-              placeholder="member@email.com"
-            />
-            <p className="text-gray-600 text-[11px] mt-1.5">
-              We'll email this address a link to set their own password — no password to generate or share yourself.
-            </p>
-            {!hasEmail && (
-              <p className="text-amber-400 text-[11px] mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                An email address is required — portal login can't be set up by phone number alone.
-              </p>
-            )}
-          </div>
-
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button
-              onClick={handleCreate}
-              disabled={loading || !hasEmail}
-              className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading
-                ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                : <KeyRound className="w-4 h-4" />}
-              Send Invite
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Helpers ───────────────────────────────────────────────────
-function genMemberCode(gymCode) {
-  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${gymCode?.slice(-3) || 'MBR'}-${suffix}`;
-}
-
-function computeEndDate(startDate, duration) {
-  const d = new Date(startDate);
-  if (duration === 'monthly')   d.setMonth(d.getMonth() + 1);
-  else if (duration === 'quarterly') d.setMonth(d.getMonth() + 3);
-  else if (duration === 'yearly')    d.setFullYear(d.getFullYear() + 1);
-  return d.toISOString().split('T')[0];
-}
-
-// ── Add / Edit Member Modal ───────────────────────────────────
-function MemberModal({ member, gymId, gymCode, plans, onClose, onSave, memberCount, isAtMemberLimit, onLimitReached }) {
-  const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm({
-    defaultValues: member
-      ? {
-          ...member,
-          // Convert joined_at (timestamptz) → plain date string for the input
-          joined_at: member.joined_at ? member.joined_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        }
-      : {
-          status:     'active',
-          start_date: new Date().toISOString().split('T')[0],
-          joined_at:  new Date().toISOString().split('T')[0],
-        },
-  });
-
-  const [activeTab, setActiveTab]   = useState('info');
-  const [showPlanSection, setShowPlanSection] = useState(!member?.id);
-  const [activeSub, setActiveSub]   = useState(null);
-  const [subLoading, setSubLoading] = useState(false);
-  const [subForm, setSubForm]       = useState(null);
-  const [subSaving, setSubSaving]   = useState(false);
-
-  // Photo upload state
-  const [photoPreview, setPhotoPreview] = useState(member?.photo_url || null);
-  const [photoUploading, setPhotoUploading] = useState(false);
-  const photoInputRef = useRef(null);
-
-  const handlePhotoChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Local preview
-    const objectUrl = URL.createObjectURL(file);
-    setPhotoPreview(objectUrl);
-    // Upload to Supabase Storage
-    setPhotoUploading(true);
-    try {
-      const ext = file.name.split('.').pop();
-      const path = `${gymId}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from('member-photos')
-        .upload(path, file, { upsert: true });
-      if (upErr) throw upErr;
-      const { data: { publicUrl } } = supabase.storage
-        .from('member-photos')
-        .getPublicUrl(path);
-      setValue('photo_url', publicUrl);
-      setPhotoPreview(publicUrl);
-      toast.success('Photo uploaded!');
-    } catch (err) {
-      toast.error('Photo upload failed: ' + err.message);
-      setPhotoPreview(member?.photo_url || null);
-    } finally {
-      setPhotoUploading(false);
-    }
-  };
-
-  const planId    = watch('plan_id');
-  const startDate = watch('start_date');
-
-  useEffect(() => {
-    reset(member
-      ? {
-          ...member,
-          joined_at: member.joined_at ? member.joined_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        }
-      : {
-          status:    'active',
-          start_date: new Date().toISOString().split('T')[0],
-          joined_at:  new Date().toISOString().split('T')[0],
-        });
-  }, [member]);
-
-  // Load active subscription when editing
-  useEffect(() => {
-    if (!member?.id) return;
-    setSubLoading(true);
-    supabase
-      .from('member_subscriptions')
-      .select('*, subscription_plans(plan_name, duration, price)')
-      .eq('member_id', member.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
-      .then(({ data }) => {
-        const active = (data || []).find(s => s.status === 'active') || data?.[0] || null;
-        setActiveSub(active);
-        if (active) {
-          setSubForm({
-            plan_id:    active.plan_id,
-            start_date: active.start_date,
-            end_date:   active.end_date,
-            status:     active.status,
-            notes:      active.notes || '',
-          });
-        }
-        setSubLoading(false);
-      });
-  }, [member?.id]);
-
-  // Auto-compute end date when plan + start change
-  useEffect(() => {
-    if (planId && startDate) {
-      const plan = plans.find(p => p.id === planId);
-      if (plan) setValue('end_date', computeEndDate(startDate, plan.duration));
-    }
-  }, [planId, startDate]);
-
-  // Auto-compute end date for subscription form
-  const handleSubPlanChange = (planId) => {
-    const plan = plans.find(p => p.id === planId);
-    setSubForm(f => ({
-      ...f,
-      plan_id: planId,
-      ...(plan && f.start_date ? { end_date: computeEndDate(f.start_date, plan.duration) } : {}),
-    }));
-  };
-
-  const handleSubStartChange = (date) => {
-    const plan = plans.find(p => p.id === subForm?.plan_id);
-    setSubForm(f => ({
-      ...f,
-      start_date: date,
-      ...(plan && date ? { end_date: computeEndDate(date, plan.duration) } : {}),
-    }));
-  };
-
-  const saveSubscription = async () => {
-    if (!activeSub?.id || !subForm) return;
-    setSubSaving(true);
-    try {
-      const { error } = await supabase.from('member_subscriptions').update({
-        plan_id:    subForm.plan_id,
-        start_date: subForm.start_date,
-        end_date:   subForm.end_date,
-        status:     subForm.status,
-        notes:      subForm.notes,
-      }).eq('id', activeSub.id);
-      if (error) throw error;
-      toast.success('Subscription updated!');
-    } catch (err) {
-      toast.error(err.message || 'Failed to update subscription');
-    } finally {
-      setSubSaving(false);
-    }
-  };
-
-  const onSubmit = async (data) => {
-    try {
-      let memberId = member?.id;
-
-      if (!member?.id) {
-        // — Plan gate: enforce member limit at submit time (not just on the button)
-        if (isAtMemberLimit && isAtMemberLimit(memberCount ?? 0)) {
-          onLimitReached?.();
-          return;
-        }
-
-        // Insert new member
-        const { data: newMember, error } = await supabase.from('members').insert({
-          gym_id:        gymId,
-          member_code:   genMemberCode(gymCode),
-          full_name:     data.full_name,
-          phone:         data.phone,
-          email:         data.email,
-          dob:           data.dob || null,
-          address:       data.address,
-          photo_url:     data.photo_url || null,
-          fitness_goal:  data.fitness_goal,
-          health_notes:  data.health_notes,
-          status:        data.status || 'active',
-          admission_fee: data.admission_fee ? Number(data.admission_fee) : null,
-        }).select().single();
-        if (error) throw error;
-        memberId = newMember.id;
-
-        // 💰 Admission fee is now auto-synced to fee_payments via DB trigger
-        // (trg_sync_admission_fee) — no manual insert needed here.
-
-        // Optionally assign subscription plan
-        if (showPlanSection && data.plan_id && data.start_date && data.end_date) {
-          const { error: subErr } = await supabase.from('member_subscriptions').insert({
-            gym_id:    gymId,
-            member_id: memberId,
-            plan_id:   data.plan_id,
-            start_date: data.start_date,
-            end_date:   data.end_date,
-            status:    'active',
-            paid_confirmed: false,
-          });
-          if (subErr) {
-            // Member was created; warn about plan failure but don't roll back
-            toast('Member added! Plan assignment failed — assign from Subscriptions page.', { icon: '⚠️' });
-            onSave();
-            return;
-          }
-        }
-        toast.success('Member added!');
-
-        // � udd14 Fire welcome email (non-blocking, silent fail)
-        // Must include Authorization header — anon key alone is not sufficient.
-        if (data.email) {
-          supabase.auth.getSession().then(({ data: sessionData }) => {
-            const token = sessionData?.session?.access_token;
-            if (!token) return;
-            fetch(edgeFunctionUrl('send-reminders'), {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-              },
-              body: JSON.stringify({ welcome: true, member_id: memberId }),
-            }).catch(() => {}); // silent fail — email is a bonus
-          }).catch(() => {});
-        }
-
-      } else {
-        // Update existing member
-        const { error } = await supabase.from('members').update({
-          full_name:     data.full_name,
-          phone:         data.phone,
-          email:         data.email,
-          dob:           data.dob || null,
-          address:       data.address,
-          photo_url:     data.photo_url || null,
-          fitness_goal:  data.fitness_goal,
-          health_notes:  data.health_notes,
-          status:        data.status,
-          joined_at:     data.joined_at || null,
-          admission_fee: data.admission_fee ? Number(data.admission_fee) : null,
-        }).eq('id', member.id);
-        if (error) throw error;
-        toast.success('Member updated!');
-      }
-
-      onSave();
-    } catch (err) {
-      toast.error(err.message || 'Something went wrong');
-    }
-  };
-
-  const selectedPlan = plans.find(p => p.id === planId);
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content max-w-2xl" onClick={e => e.stopPropagation()}>
-        <div className="p-6 border-b border-white/5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {/* Photo avatar with upload trigger */}
-            <div className="relative flex-shrink-0">
-              <div
-                onClick={() => photoInputRef.current?.click()}
-                className="w-14 h-14 rounded-2xl overflow-hidden bg-gradient-to-br from-primary-600 to-accent-500 flex items-center justify-center cursor-pointer ring-2 ring-white/10 hover:ring-primary-500/60 transition-all group"
-                title="Click to upload photo"
-              >
-                {photoPreview ? (
-                  <img src={photoPreview} alt="member" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-white text-xl font-bold">
-                    {watch('full_name')?.charAt(0) || '?'}
-                  </span>
-                )}
-                {/* Overlay */}
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl">
-                  {photoUploading
-                    ? <Loader2 className="w-5 h-5 text-white animate-spin" />
-                    : <Camera className="w-5 h-5 text-white" />}
-                </div>
-              </div>
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={handlePhotoChange}
-              />
-              {/* Hidden form field for photo_url */}
-              <input type="hidden" {...register('photo_url')} />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-white">
-                {member?.id ? 'Edit Member' : 'Add Member'}
-              </h2>
-              {member?.member_code && (
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Admission ID</span>
-                  <span className="font-mono text-primary-400 text-xs font-bold bg-primary-500/10 px-2 py-0.5 rounded-full border border-primary-500/20">
-                    {member.member_code}
-                  </span>
-                </div>
-              )}
-              {!member?.id && (
-                <p className="text-gray-500 text-xs mt-0.5">Click avatar to add photo</p>
-              )}
-            </div>
-          </div>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-
-        {/* Tabs — only shown when editing */}
-        {member?.id && (
-          <div className="flex border-b border-white/5">
-            {[{ id: 'info', label: 'Personal Info' }, { id: 'subscription', label: 'Subscription' }].map(t => (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
-                className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                  activeTab === t.id
-                    ? 'border-primary-500 text-white'
-                    : 'border-transparent text-gray-500 hover:text-gray-300'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* ── Info Tab ───────────────────────── */}
-        {(activeTab === 'info' || !member?.id) && (
-          <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-            {/* ── Member Info ─────────────────────────────── */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="label">Full Name *</label>
-                <input {...register('full_name', { required: true })} className="input-field" placeholder="Full Name" />
-              </div>
-              <div>
-                <label className="label">Phone</label>
-                <input {...register('phone')} className="input-field" placeholder="+91 98765 43210" />
-              </div>
-              <div>
-                <label className="label">Email</label>
-                <input {...register('email')} type="email" className="input-field" placeholder="member@email.com" />
-              </div>
-              <div>
-                <label className="label">Date of Birth</label>
-                <input {...register('dob')} type="date" className="input-field" />
-              </div>
-              <div>
-                <label className="label">Joining Date</label>
-                <input {...register('joined_at')} type="date" className="input-field" />
-              </div>
-              <div>
-                <label className="label">Status</label>
-                <select {...register('status')} className="input-field">
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-              <div className="col-span-2">
-                <label className="label">
-                  Admission Fee (₹)
-                  <span className="text-gray-500 font-normal ml-1 text-xs">— one-time</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">₹</span>
-                  <input
-                    {...register('admission_fee')}
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="input-field pl-7"
-                    placeholder="e.g. 500"
-                  />
-                </div>
-                <p className="text-gray-600 text-[11px] mt-1">Leave blank if no admission fee is charged.</p>
-              </div>
-              <div className="col-span-2">
-                <label className="label">Address</label>
-                <textarea {...register('address')} className="input-field" rows={2} placeholder="Address" />
-              </div>
-              <div className="col-span-2">
-                <label className="label">Fitness Goal</label>
-                <input {...register('fitness_goal')} className="input-field" placeholder="Weight loss, muscle gain, general fitness..." />
-              </div>
-              <div className="col-span-2">
-                <label className="label">Health Notes</label>
-                <textarea {...register('health_notes')} className="input-field" rows={2} placeholder="Any medical conditions, allergies..." />
-              </div>
-            </div>
-
-            {/* ── Subscription Plan (new members only) ─────── */}
-            {!member?.id && (
-              <div className="border border-white/8 rounded-2xl overflow-hidden">
-                {/* Section header toggle */}
-                <button
-                  type="button"
-                  onClick={() => setShowPlanSection(p => !p)}
-                  className="w-full flex items-center justify-between px-5 py-3.5 bg-dark-700/50 hover:bg-dark-700 transition-colors"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <CreditCard className="w-4 h-4 text-primary-400" />
-                    <span className="text-white font-semibold text-sm">Assign Subscription Plan</span>
-                    {!showPlanSection && (
-                      <span className="text-[11px] text-gray-500 bg-dark-600 px-2 py-0.5 rounded-full">Optional</span>
-                    )}
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showPlanSection ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showPlanSection && (
-                  <div className="p-5 space-y-4">
-                    {plans.length === 0 ? (
-                      <p className="text-gray-500 text-sm text-center py-2">
-                        No plans found — create plans first in the Subscriptions page.
-                      </p>
-                    ) : (
-                      <>
-                        {/* Plan cards (radio style) */}
-                        <div>
-                          <label className="label">Select Plan</label>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                            {plans.map(p => (
-                              <label
-                                key={p.id}
-                                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                                  planId === p.id
-                                    ? 'border-primary-500 bg-primary-600/15'
-                                    : 'border-white/8 hover:border-white/20 bg-dark-700/40'
-                                }`}
-                              >
-                                <input
-                                  {...register('plan_id')}
-                                  type="radio"
-                                  value={p.id}
-                                  className="accent-primary-500 w-4 h-4 flex-shrink-0"
-                                />
-                                <div className="min-w-0">
-                                  <p className="text-white text-sm font-semibold truncate">{p.plan_name}</p>
-                                  <p className="text-gray-400 text-xs">
-                                    ₹{p.price} · <span className="capitalize">{p.duration}</span>
-                                  </p>
-                                </div>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Dates */}
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="label">Purchase / Start Date *</label>
-                            <input {...register('start_date')} type="date" className="input-field" />
-                          </div>
-                          <div>
-                            <label className="label">
-                              End Date
-                              <span className="text-primary-400 text-[10px] ml-1">(auto-filled)</span>
-                            </label>
-                            <input {...register('end_date')} type="date" className="input-field" />
-                          </div>
-                        </div>
-
-                        {/* Reminder preview */}
-                        {selectedPlan && watch('end_date') && (
-                          <div className="bg-dark-700/60 rounded-xl p-4 space-y-2">
-                            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                              <Bell className="w-3.5 h-3.5 text-amber-400" /> Auto-Reminders Scheduled
-                            </p>
-                            {[
-                              { label: '7 days before', days: 7,  color: 'text-amber-400' },
-                              { label: '3 days before', days: 3,  color: 'text-orange-400' },
-                              { label: '24 hrs before', days: 1,  color: 'text-red-400' },
-                            ].map(({ label, days, color }) => {
-                              const d = new Date(watch('end_date'));
-                              d.setDate(d.getDate() - days);
-                              return (
-                                <div key={label} className="flex items-center justify-between text-sm">
-                                  <span className={`${color} font-medium flex items-center gap-1.5`}>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                                    {label}
-                                  </span>
-                                  <span className="text-gray-500 text-xs">
-                                    {d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                            <p className="text-[11px] text-gray-600 border-t border-white/5 pt-2 mt-1">
-                              Reminders shown in Dashboard & Member Portal. No reminder after payment confirmed.
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-1">
-              <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-              <button type="submit" disabled={isSubmitting} className="btn-primary flex-1">
-                {isSubmitting ? 'Saving...' : member?.id ? 'Save Changes' : 'Add Member'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* ── Subscription Tab (edit only) ──────────────── */}
-        {member?.id && activeTab === 'subscription' && (
-          <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-            {subLoading ? (
-              <div className="flex items-center justify-center py-10">
-                <div className="w-6 h-6 border-2 border-primary-500/30 border-t-primary-500 rounded-full animate-spin" />
-              </div>
-            ) : !activeSub ? (
-              <div className="text-center py-10">
-                <CreditCard className="w-10 h-10 text-gray-700 mx-auto mb-3" />
-                <p className="text-gray-400 font-medium">No subscription found</p>
-                <p className="text-gray-600 text-sm mt-1">Assign a plan from the Subscriptions page</p>
-              </div>
-            ) : (
-              <>
-                {/* Current plan info */}
-                <div className="bg-dark-700/60 rounded-xl p-4 border border-white/5">
-                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Current Subscription</p>
-                  <p className="text-white font-semibold">{activeSub.subscription_plans?.plan_name}</p>
-                  <p className="text-gray-400 text-sm capitalize">
-                    {activeSub.subscription_plans?.duration} · ₹{activeSub.subscription_plans?.price}
-                  </p>
-                </div>
-
-                {/* Change Plan */}
-                {plans.length > 0 && (
-                  <div>
-                    <label className="label">Change Plan</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                      {plans.map(p => (
-                        <label
-                          key={p.id}
-                          className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                            subForm?.plan_id === p.id
-                              ? 'border-primary-500 bg-primary-600/15'
-                              : 'border-white/8 hover:border-white/20 bg-dark-700/40'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="sub_plan"
-                            value={p.id}
-                            checked={subForm?.plan_id === p.id}
-                            onChange={() => handleSubPlanChange(p.id)}
-                            className="accent-primary-500 w-4 h-4 flex-shrink-0"
-                          />
-                          <div className="min-w-0">
-                            <p className="text-white text-sm font-semibold truncate">{p.plan_name}</p>
-                            <p className="text-gray-400 text-xs">₹{p.price} · <span className="capitalize">{p.duration}</span></p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Dates */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">Start Date</label>
-                    <input
-                      type="date"
-                      value={subForm?.start_date || ''}
-                      onChange={e => handleSubStartChange(e.target.value)}
-                      className="input-field"
-                    />
-                  </div>
-                  <div>
-                    <label className="label">
-                      End Date
-                      <span className="text-primary-400 text-[10px] ml-1">(auto-filled)</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={subForm?.end_date || ''}
-                      onChange={e => setSubForm(f => ({ ...f, end_date: e.target.value }))}
-                      className="input-field"
-                    />
-                  </div>
-                </div>
-
-                {/* Status */}
-                <div>
-                  <label className="label">Subscription Status</label>
-                  <select
-                    value={subForm?.status || 'active'}
-                    onChange={e => setSubForm(f => ({ ...f, status: e.target.value }))}
-                    className="input-field"
-                  >
-                    <option value="active">Active</option>
-                    <option value="expired">Expired</option>
-                    <option value="pending">Pending</option>
-                  </select>
-                </div>
-
-                {/* Notes */}
-                <div>
-                  <label className="label">Notes</label>
-                  <textarea
-                    value={subForm?.notes || ''}
-                    onChange={e => setSubForm(f => ({ ...f, notes: e.target.value }))}
-                    className="input-field"
-                    rows={2}
-                    placeholder="Optional notes..."
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-1">
-                  <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-                  <button
-                    onClick={saveSubscription}
-                    disabled={subSaving}
-                    className="btn-primary flex-1 flex items-center justify-center gap-2"
-                  >
-                    {subSaving
-                      ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      : <Save className="w-4 h-4" />}
-                    {subSaving ? 'Saving...' : 'Update Subscription'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Delete Confirm Modal ──────────────────────────────────────
-function DeleteConfirmModal({ member, onClose, onDeactivate, onPermanentDelete }) {
-  const [tab, setTab]           = useState('deactivate'); // 'deactivate' | 'permanent'
-  const [confirmText, setConfirmText] = useState('');
-  const [loading, setLoading]   = useState(false);
-
-  const nameMatches = confirmText.trim().toLowerCase() === member.full_name.trim().toLowerCase();
-
-  const handleDeactivate = async () => {
-    setLoading(true);
-    await onDeactivate(member.id);
-    setLoading(false);
-    onClose();
-  };
-
-  const handlePermanent = async () => {
-    if (!nameMatches) return;
-    setLoading(true);
-    await onPermanentDelete(member.id);
-    setLoading(false);
-    onClose();
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content max-w-md" onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
-        <div className="p-6 border-b border-white/5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center">
-              <Trash2 className="w-5 h-5 text-red-400" />
-            </div>
-            <div>
-              <h2 className="text-white font-bold">Remove Member</h2>
-              <p className="text-gray-500 text-xs mt-0.5 truncate max-w-[240px]">{member.full_name} · {member.member_code}</p>
-            </div>
-          </div>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-
-        {/* Tab switcher */}
-        <div className="flex border-b border-white/5">
-          {[
-            { id: 'deactivate', label: 'Deactivate' },
-            { id: 'permanent',  label: 'Permanent Delete' },
-          ].map(t => (
-            <button
-              key={t.id}
-              onClick={() => { setTab(t.id); setConfirmText(''); }}
-              className={`flex-1 px-4 py-3 text-sm font-semibold transition-colors border-b-2 -mb-px ${
-                tab === t.id
-                  ? t.id === 'permanent'
-                    ? 'border-red-500 text-red-400'
-                    : 'border-primary-500 text-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="p-6 space-y-5">
-
-          {/* ── Deactivate tab ── */}
-          {tab === 'deactivate' && (
-            <>
-              <div className="bg-dark-700/60 rounded-xl p-4 border border-white/5 space-y-2">
-                <p className="text-white font-semibold text-sm flex items-center gap-2">
-                  <UserX className="w-4 h-4 text-amber-400" /> Soft Deactivation
-                </p>
-                <ul className="text-gray-400 text-xs space-y-1.5 list-disc list-inside">
-                  <li>Member is marked <span className="text-amber-400 font-semibold">Inactive</span> — not deleted</li>
-                  <li>All subscription &amp; attendance history is kept</li>
-                  <li>Can be reactivated at any time from the Edit modal</li>
-                </ul>
-              </div>
-              <div className="flex gap-3">
-                <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-                <button
-                  onClick={handleDeactivate}
-                  disabled={loading}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm bg-amber-600/20 text-amber-400 border border-amber-500/30 hover:bg-amber-600/30 transition-colors disabled:opacity-50"
-                >
-                  {loading
-                    ? <div className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-                    : <UserX className="w-4 h-4" />}
-                  Deactivate
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* ── Permanent Delete tab ── */}
-          {tab === 'permanent' && (
-            <>
-              <div className="bg-red-500/8 rounded-xl p-4 border border-red-500/20 space-y-2">
-                <p className="text-red-400 font-semibold text-sm flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4" /> Permanent &amp; Irreversible
-                </p>
-                <ul className="text-red-300/70 text-xs space-y-1.5 list-disc list-inside">
-                  <li>Member record is <span className="text-red-400 font-bold">permanently deleted</span></li>
-                  <li>All subscriptions, attendance &amp; linked data are wiped</li>
-                  <li>This action <span className="text-red-400 font-bold">cannot be undone</span></li>
-                </ul>
-              </div>
-
-              <div>
-                <label className="label text-red-400">
-                  Type <span className="font-bold text-white">{member.full_name}</span> to confirm
-                </label>
-                <input
-                  value={confirmText}
-                  onChange={e => setConfirmText(e.target.value)}
-                  className="input-field mt-1 border-red-500/30 focus:border-red-500"
-                  placeholder={member.full_name}
-                  autoFocus
-                />
-              </div>
-
-              <div className="flex gap-3">
-                <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-                <button
-                  onClick={handlePermanent}
-                  disabled={!nameMatches || loading}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  {loading
-                    ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    : <Trash2 className="w-4 h-4" />}
-                  Delete Forever
-                </button>
-              </div>
-            </>
-          )}
-
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Subscription Status Quick-Change Badge ────────────────────
-function SubStatusBadge({ sub, onChangeStatus }) {
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  if (!sub) return <span className="text-gray-600 text-xs">No plan</span>;
-
-  const cfg = {
-    active:  { label: 'Active',  cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
-    expired: { label: 'Expired', cls: 'text-red-400 bg-red-500/10 border-red-500/20' },
-    pending: { label: 'Pending', cls: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
-  };
-  const current = cfg[sub.status] || cfg.active;
-
-  const handleSelect = async (newStatus) => {
-    if (newStatus === sub.status) { setOpen(false); return; }
-    setSaving(true);
-    setOpen(false);
-    await onChangeStatus(sub.id, newStatus);
-    setSaving(false);
-  };
-
-  return (
-    <div className="relative inline-block">
-      <button
-        onClick={() => setOpen(o => !o)}
-        disabled={saving}
-        className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all hover:opacity-80 ${current.cls}`}
-        title="Click to change subscription status"
-      >
-        {saving
-          ? <div className="w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />
-          : current.label === 'Active'  ? <Check className="w-2.5 h-2.5" />
-          : current.label === 'Expired' ? <Clock className="w-2.5 h-2.5" />
-          : <Timer className="w-2.5 h-2.5" />}
-        {current.label}
-        <ChevronDown className="w-2.5 h-2.5 opacity-60" />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full mt-1 z-50 bg-dark-700 border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[120px]">
-            {Object.entries(cfg).map(([val, { label, cls }]) => (
-              <button
-                key={val}
-                onClick={() => handleSelect(val)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold hover:bg-white/5 transition-colors text-left ${
-                  val === sub.status ? 'opacity-40 cursor-default' : ''
-                } ${
-                  val === 'active' ? 'text-emerald-400'
-                  : val === 'expired' ? 'text-red-400'
-                  : 'text-amber-400'
-                }`}
-              >
-                {val === 'active'  ? <Check className="w-3 h-3" />
-                : val === 'expired' ? <Clock className="w-3 h-3" />
-                : <Timer className="w-3 h-3" />}
-                {label}
-                {val === sub.status && <Check className="w-3 h-3 ml-auto" />}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+import MemberModal from './components/MemberModal';
+import CreateLoginModal from './components/CreateLoginModal';
+import InviteSentModal from './components/InviteSentModal';
+import DeleteConfirmModal from './components/DeleteConfirmModal';
+import SubStatusBadge from './components/SubStatusBadge';
+
+const PAGE_SIZE = 50;
 
 // ── Main Page ─────────────────────────────────────────────────
 export default function MembersPage() {
@@ -1044,16 +19,29 @@ export default function MembersPage() {
   const [plans,           setPlans]           = useState([]);
   const [loading,         setLoading]         = useState(true);
   const [search,          setSearch]          = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter,    setStatusFilter]    = useState('active');
   const [subStatusFilter, setSubStatusFilter] = useState('');   // '' | 'active' | 'expired' | 'pending'
+  const [page,            setPage]            = useState(0);    // pages loaded so far (0 = first PAGE_SIZE rows)
+  const [totalCount,      setTotalCount]      = useState(0);    // total rows matching server-side filters
+  const [rawCount,        setRawCount]        = useState(0);    // rows fetched before client-side sub-status filter
   const [modalMember,  setModalMember]  = useState(undefined);
   // Login creation state
   const [loginTarget,  setLoginTarget]  = useState(null); // member object for CreateLoginModal
   const [credentials,  setCredentials]  = useState(null); // response from edge fn → InviteSentModal
   const { user } = useAuthStore();
-  const { canAccess: _canAccess, isAtMemberLimit, maxMembers, plan } = usePlanGate();
+  const { isAtMemberLimit, plan } = usePlanGate();
   const [showUpgrade,  setShowUpgrade]  = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null); // member object for DeleteConfirmModal
+
+  // Debounce search input — avoids a Supabase round-trip per keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset pagination whenever a filter changes
+  useEffect(() => { setPage(0); }, [debouncedSearch, statusFilter, subStatusFilter]);
 
   const fetchMembers = async () => {
     if (!user?.gym_id) return;
@@ -1063,17 +51,20 @@ export default function MembersPage() {
         (() => {
           let q = supabase
             .from('members')
-            .select('*, member_subscriptions(id, plan_id, end_date, status, paid_confirmed, subscription_plans(plan_name))')
+            .select('*, member_subscriptions(id, plan_id, end_date, status, paid_confirmed, subscription_plans(plan_name))', { count: 'exact' })
             .eq('gym_id', user.gym_id)
-            .order('joined_at', { ascending: false });
+            .order('joined_at', { ascending: false })
+            .range(0, (page + 1) * PAGE_SIZE - 1);
           if (statusFilter) q = q.eq('status', statusFilter);
-          if (search) q = q.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,member_code.ilike.%${search}%,email.ilike.%${search}%`);
+          if (debouncedSearch) q = q.or(`full_name.ilike.%${debouncedSearch}%,phone.ilike.%${debouncedSearch}%,member_code.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%`);
           return q;
         })(),
         supabase.from('subscription_plans').select('*').eq('gym_id', user.gym_id).order('price'),
       ]);
 
       let data = membersRes.data || [];
+      setRawCount(data.length);
+      setTotalCount(membersRes.count ?? data.length);
 
       // Client-side filter by subscription status (most recent sub per member)
       if (subStatusFilter) {
@@ -1095,6 +86,10 @@ export default function MembersPage() {
     }
   };
 
+  useEffect(() => { fetchMembers(); }, [debouncedSearch, statusFilter, subStatusFilter, user?.gym_id, page]);
+
+  const hasMore = rawCount < totalCount;
+
   // Inline subscription status change
   const handleSubStatusChange = async (subId, newStatus) => {
     try {
@@ -1109,8 +104,6 @@ export default function MembersPage() {
       toast.error(err.message || 'Failed to update status');
     }
   };
-
-  useEffect(() => { fetchMembers(); }, [search, statusFilter, subStatusFilter, user?.gym_id]);
 
   // Soft delete — mark inactive
   const handleDeactivate = async (id) => {
@@ -1143,16 +136,24 @@ export default function MembersPage() {
     return { ...sub, daysLeft, planName: sub.subscription_plans?.plan_name };
   };
 
+  // Plan-limit checks use the total member count from the server, not just
+  // the rows loaded so far — with pagination those can differ.
+  const atLimit = isAtMemberLimit(totalCount);
+
   return (
     <div className="space-y-6">
       <div className="page-header">
         <div>
           <h1 className="page-title">Members</h1>
-          <p className="page-subtitle">{members.length} member{members.length !== 1 ? 's' : ''} found</p>
+          <p className="page-subtitle">
+            {subStatusFilter
+              ? `${members.length} of ${totalCount} member${totalCount !== 1 ? 's' : ''} shown`
+              : `${totalCount} member${totalCount !== 1 ? 's' : ''} found`}
+          </p>
         </div>
         <button
           onClick={() => {
-            if (isAtMemberLimit(members.length)) {
+            if (atLimit) {
               setShowUpgrade(true);
             } else {
               setModalMember(null);
@@ -1160,7 +161,7 @@ export default function MembersPage() {
           }}
           className="btn-primary flex items-center gap-2"
         >
-          {isAtMemberLimit(members.length)
+          {atLimit
             ? <><Lock className="w-4 h-4" /> Limit Reached</>
             : <><Plus className="w-4 h-4" /> Add Member</>}
         </button>
@@ -1381,6 +382,19 @@ export default function MembersPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Load more — appears only when the server has more rows than loaded */}
+        {!loading && hasMore && (
+          <div className="border-t border-white/5 p-3 text-center">
+            <button
+              onClick={() => setPage(p => p + 1)}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-primary-400 hover:text-primary-300 transition-colors px-4 py-2"
+            >
+              <ChevronDown className="w-4 h-4" />
+              Load {Math.min(PAGE_SIZE, totalCount - rawCount)} more ({rawCount} of {totalCount} loaded)
+            </button>
+          </div>
+        )}
       </div>
 
       {modalMember !== undefined && (
@@ -1389,7 +403,7 @@ export default function MembersPage() {
           gymId={user.gym_id}
           gymCode={user.gym?.gym_code}
           plans={plans}
-          memberCount={members.length}
+          memberCount={totalCount}
           isAtMemberLimit={isAtMemberLimit}
           onLimitReached={() => { setModalMember(undefined); setShowUpgrade(true); }}
           onClose={() => setModalMember(undefined)}

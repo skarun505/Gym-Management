@@ -9,8 +9,14 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line, Legend,
 } from 'recharts';
-import { supabase } from '../../lib/supabase';
 import useAuthStore from '../../store/authStore';
+import {
+  countActiveMembers, countNewMembersSince, getRecentMembers,
+  countTodayAttendance, getAttendanceSince, getRecentCheckIns,
+  countExpiringSoon,
+  getLowStockItems,
+  getTodayRevenue, getRevenueSince, getRecentPayments, sumPayments,
+} from '../../data';
 import { fetchExpiringSubscriptions } from '../../utils/subscriptionReminders';
 import SubscriptionReminderBanner from '../../components/SubscriptionReminderBanner';
 
@@ -119,8 +125,7 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       const gymId = user.gym_id;
-      const today = new Date().toISOString().split('T')[0];
-      const monthStart = today.slice(0, 7) + '-01';
+      const monthStart = new Date().toISOString().slice(0, 7) + '-01';
 
       // Last 7 dates
       const last7 = Array.from({ length: 7 }, (_, i) => {
@@ -134,48 +139,25 @@ export default function DashboardPage() {
         recentCheckinsRes, recentMembersRes, recentPaymentsRes,
         chartRevRes,
       ] = await Promise.all([
-        supabase.from('members').select('id', { count: 'exact' }).eq('gym_id', gymId).eq('status', 'active'),
-        supabase.from('attendance').select('id', { count: 'exact' }).eq('gym_id', gymId).gte('created_at', today),
-        supabase.from('member_subscriptions').select('id', { count: 'exact' })
-          .eq('gym_id', gymId).eq('status', 'active')
-          .gte('end_date', today)
-          .lte('end_date', new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]),
-        supabase.from('inventory').select('id, quantity, low_stock_alert').eq('gym_id', gymId),
-        // Attendance chart (last 7 days)
-        supabase.from('attendance').select('created_at').eq('gym_id', gymId)
-          .gte('created_at', last7[0]),
-        // Today's revenue
-        supabase.from('fee_payments').select('amount_paid')
-          .eq('gym_id', gymId).eq('payment_date', today),
-        // Month revenue
-        supabase.from('fee_payments').select('amount_paid')
-          .eq('gym_id', gymId).gte('payment_date', monthStart),
-        // New members this month
-        supabase.from('members').select('id', { count: 'exact' })
-          .eq('gym_id', gymId).gte('joined_at', monthStart),
-        // Recent check-ins (for activity feed)
-        supabase.from('attendance')
-          .select('created_at, members(full_name)')
-          .eq('gym_id', gymId)
-          .order('created_at', { ascending: false }).limit(5),
-        // Recent new members
-        supabase.from('members')
-          .select('full_name, joined_at')
-          .eq('gym_id', gymId)
-          .order('joined_at', { ascending: false }).limit(3),
-        // Recent payments
-        supabase.from('fee_payments')
-          .select('amount_paid, payment_date, members(full_name)')
-          .eq('gym_id', gymId)
-          .order('created_at', { ascending: false }).limit(3),
-        // Revenue chart (last 7 days)
-        supabase.from('fee_payments').select('payment_date, amount_paid')
-          .eq('gym_id', gymId).gte('payment_date', last7[0]),
+        // Shared query helpers from src/data/ — column names verified against
+        // the live schema there, instead of hand-written per page.
+        countActiveMembers(gymId),
+        countTodayAttendance(gymId),
+        countExpiringSoon(gymId, 7),
+        getLowStockItems(gymId),
+        getAttendanceSince(gymId, last7[0]),      // attendance chart
+        getTodayRevenue(gymId),
+        getRevenueSince(gymId, monthStart),       // month revenue
+        countNewMembersSince(gymId, monthStart),
+        getRecentCheckIns(gymId, 5),              // activity feed
+        getRecentMembers(gymId, 3),
+        getRecentPayments(gymId, 3),
+        getRevenueSince(gymId, last7[0]),         // revenue chart
       ]);
 
       const lowStock = (inventoryRes.data || []).filter(i => i.quantity <= i.low_stock_alert).length;
-      const todayRev = (todayRevRes.data || []).reduce((s, p) => s + Number(p.amount_paid || 0), 0);
-      const monthRev = (monthRevRes.data || []).reduce((s, p) => s + Number(p.amount_paid || 0), 0);
+      const todayRev = sumPayments(todayRevRes.data);
+      const monthRev = sumPayments(monthRevRes.data);
 
       // Build chart data
       const attMap = {}, revMap = {};
