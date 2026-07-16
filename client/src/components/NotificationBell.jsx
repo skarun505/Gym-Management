@@ -39,7 +39,7 @@ export default function NotificationBell() {
           .eq('gym_id', user.gym_id).eq('status', 'active')
           .gte('end_date', today).lte('end_date', in7days),
         supabase.from('inventory')
-          .select('id, name, quantity, low_stock_alert')
+          .select('id, item_name, quantity, low_stock_alert')
           .eq('gym_id', user.gym_id),
         supabase.from('members')
           .select('id, full_name, joined_at')
@@ -64,7 +64,7 @@ export default function NotificationBell() {
         items.push({
           id:   `stock_${i.id}`,
           type: 'lowstock',
-          msg:  `${i.name} is low on stock (${i.quantity} left)`,
+          msg:  `${i.item_name} is low on stock (${i.quantity} left)`,
           path: '/inventory',
         });
       });
