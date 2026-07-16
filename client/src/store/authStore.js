@@ -70,8 +70,10 @@ const useAuthStore = create((set, get) => ({
       if (!email.includes('@')) {
         const { data: resolved, error: rpcError } = await supabase
           .rpc('get_email_by_phone', { phone_input: email });
+        // Same message as a wrong password — a distinct "no account for this
+        // number" reply would let anyone probe which phone numbers have accounts.
         if (rpcError || !resolved)
-          throw new Error('No account found for this mobile number.');
+          throw new Error('Invalid login credentials');
         email = resolved;
       }
 
@@ -97,7 +99,9 @@ const useAuthStore = create((set, get) => ({
           applyTheme(profile);
           localStorage.setItem('gym_user', JSON.stringify(fresh));
           set({ user: fresh });
-        }).catch(() => { /* ignore background refresh errors */ });
+        }).catch(err => {
+          if (err?.message?.includes('Profile not found')) get().logout();
+        });
 
         return { success: true, role: cached.role };
       }
@@ -157,7 +161,12 @@ const useAuthStore = create((set, get) => ({
         applyTheme(profile);
         localStorage.setItem('gym_user', JSON.stringify(fresh));
         set({ user: fresh });
-      }).catch(() => { /* ignore — cached data is good enough */ });
+      }).catch(err => {
+        // Transient/network errors: cached data is good enough. But if the
+        // profile row is gone (member/staff removed), the cached role would
+        // let them keep using their old portal — force sign-out instead.
+        if (err?.message?.includes('Profile not found')) get().logout();
+      });
       return;
     }
 

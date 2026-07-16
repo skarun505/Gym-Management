@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 // Types of notifications with config
 const TYPE_CONFIG = {
   expiring:  { icon: AlertCircle, color: 'text-amber-400',  bg: 'bg-amber-500/10',   label: 'Expiring Subscription' },
+  expired:   { icon: AlertCircle, color: 'text-red-400',    bg: 'bg-red-500/10',      label: 'Expired Subscription'  },
   lowstock:  { icon: Package,     color: 'text-red-400',    bg: 'bg-red-500/10',      label: 'Low Stock'             },
   newmember: { icon: UserPlus,    color: 'text-primary-400', bg: 'bg-primary-500/10', label: 'New Member'            },
 };
@@ -31,13 +32,16 @@ export default function NotificationBell() {
     try {
       const today   = new Date().toISOString().split('T')[0];
       const in7days = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+      const ago7days = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
       const monthStart = today.slice(0, 7) + '-01';
 
       const [expRes, stockRes, newRes] = await Promise.all([
+        // Window spans 7 days back → 7 days ahead: recently-expired subs
+        // are more urgent than expiring ones, not less.
         supabase.from('member_subscriptions')
           .select('id, end_date, members(full_name)')
           .eq('gym_id', user.gym_id).eq('status', 'active')
-          .gte('end_date', today).lte('end_date', in7days),
+          .gte('end_date', ago7days).lte('end_date', in7days),
         supabase.from('inventory')
           .select('id, item_name, quantity, low_stock_alert')
           .eq('gym_id', user.gym_id),
@@ -52,10 +56,13 @@ export default function NotificationBell() {
 
       (expRes.data || []).forEach(s => {
         const daysLeft = Math.ceil((new Date(s.end_date) - new Date()) / 86400000);
+        const name = s.members?.full_name || 'Member';
         items.push({
           id:   `exp_${s.id}`,
-          type: 'expiring',
-          msg:  `${s.members?.full_name || 'Member'}'s subscription expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`,
+          type: daysLeft < 0 ? 'expired' : 'expiring',
+          msg:  daysLeft < 0
+            ? `${name}'s subscription expired ${-daysLeft} day${daysLeft !== -1 ? 's' : ''} ago`
+            : `${name}'s subscription expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`,
           path: '/subscriptions',
         });
       });

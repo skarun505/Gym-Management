@@ -3,7 +3,11 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') || '';
 const SUPABASE_URL   = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY    = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const FROM_EMAIL     = 'GymPro <onboarding@resend.dev>'; // Default Resend domain — works immediately, no custom domain needed
+// Resend's shared onboarding@resend.dev domain only delivers to the Resend
+// account owner's own inbox — real members will never receive mail from it.
+// For production: verify a domain in Resend (resend.com/domains), then
+//   npx supabase secrets set RESEND_FROM_EMAIL='GymPro <noreply@yourdomain.com>'
+const FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'GymPro <onboarding@resend.dev>';
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 

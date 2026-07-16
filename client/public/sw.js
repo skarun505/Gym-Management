@@ -8,10 +8,10 @@
  *  - Web Push Notifications 🔔
  */
 
-const CACHE_NAME  = 'gympro-v2';
+const CACHE_NAME  = 'gympro-v3';
 const OFFLINE_URL = '/offline.html';
 
-const PRECACHE = ['/', '/manifest.json', '/icon-512.svg'];
+const PRECACHE = ['/', OFFLINE_URL, '/manifest.json', '/icon-512.svg'];
 
 // ── Install ───────────────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -42,8 +42,14 @@ self.addEventListener('fetch', event => {
   if (url.hostname.includes('supabase.co') || url.hostname.includes('supabase.in')) return;
 
   if (request.mode === 'navigate') {
+    // Offline fallback order: cached app shell (works if JS/CSS were cached
+    // on a previous visit) → offline page. caches.match returns a Promise,
+    // so the fallbacks must be chained with .then — `||` would always pick
+    // the first (truthy) Promise even when it resolves to undefined.
     event.respondWith(
-      fetch(request).catch(() => caches.match('/') || caches.match(OFFLINE_URL))
+      fetch(request).catch(() =>
+        caches.match('/').then(shell => shell || caches.match(OFFLINE_URL))
+      )
     );
     return;
   }

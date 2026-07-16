@@ -8,9 +8,17 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',
 ];
 
+// Vercel preview deployments get per-branch hostnames like
+// https://gym-management-<hash>-<team>.vercel.app — allow them so the app
+// remains testable on previews without widening CORS to arbitrary origins.
+const PREVIEW_ORIGIN = /^https:\/\/gym-management-[a-z0-9-]+\.vercel\.app$/;
+
 export function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('Origin') ?? '';
-  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allowOrigin =
+    ALLOWED_ORIGINS.includes(origin) || PREVIEW_ORIGIN.test(origin)
+      ? origin
+      : ALLOWED_ORIGINS[0];
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
