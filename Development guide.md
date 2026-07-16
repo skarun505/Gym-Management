@@ -269,6 +269,37 @@ deployed live.
 - Schema baseline migration committed: `supabase/migrations/20260714000000_schema_baseline_documentation.sql` — all 29 live tables documented with correct column names.
 - `client/src/data/` expanded: `members.js`, `subscriptions.js`, `feePayments.js`, `inventory.js`, `attendance.js`, `announcements.js`, `staff.js`, `index.js` all added with production-verified column names.
 
+**Completed 2026-07-16 (fourth pass — correctness + structure):**
+- `process-checkin` timezone bugs fixed: all day-boundary and hour-of-day
+  logic now uses IST (UTC+5:30) via helpers, replacing a broken
+  `getUTCHours() + 5` (wrong offset, could exceed 23, and put pre-5:30am
+  check-ins on the previous UTC day — corrupting streaks).
+- Attendance double-tap race closed: partial unique index
+  `attendance_member_open_daily_unique (member_id, created_at) WHERE
+  check_out IS NULL` (migration `20260716000000`); edge fn maps 23505 →
+  409 "already checked in". Partial so the owner-side
+  re-check-in-after-checkout flow keeps working.
+- Service worker offline fallback actually works now (`offline.html`
+  created + precached; promise chain fixed; cache bumped to v3).
+- `send-reminders` sender configurable via `RESEND_FROM_EMAIL` secret —
+  **note: the resend.dev fallback only delivers to the Resend account
+  owner; verify a domain in Resend for production email.**
+- CORS allow-list accepts Vercel preview-deploy origins.
+- NotificationBell shows recently-expired subs (7-day lookback);
+  phone-login errors no longer confirm account existence; background
+  profile refresh force-logs-out when the profile row is gone.
+- MembersPage split into `pages/Members/components/`; members list
+  paginated (50/page + Load More) with debounced search; plan-limit gate
+  uses the server-side total count.
+- DashboardPage + InventoryPage reads migrated onto `src/data/` helpers.
+- Dead `server/` folder deleted; GitHub Actions CI added (client build).
+- **Not deployed yet from this pass**: migration `20260716000000` needs
+  `db push`; `process-checkin`, `send-reminders`, and all functions
+  importing `_shared/cors.ts` need `functions deploy`.
+- **Still blocked**: RLS policy recovery — supabase CLI session expired;
+  run `npx supabase login`, then `supabase db dump --linked` (or copy from
+  Dashboard → Database → Policies) and commit as a migration.
+
 **Completed 2026-07-14 (security audit / third hardening pass):**
 - **Fixed**: `send-reminders` and `web-push-notify` had zero authorization checks — any holder of the public anon key (visible in the deployed JS bundle) could call them directly to mass-trigger member emails or, once VAPID is configured, push arbitrary notification content to any gym. Both now require a valid caller JWT + `gym_owner`/`staff`/`super_admin` role, and `send-reminders`' `welcome` path now checks the target member belongs to the caller's own gym (was an unscoped cross-tenant lookup).
 - CORS tightened on all 7 HTTP-facing edge functions: `Access-Control-Allow-Origin: '*'` replaced with an allow-list (`supabase/functions/_shared/cors.ts`) restricted to the production Vercel domain and local dev.
