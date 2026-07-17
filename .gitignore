@@ -1,4 +1,7 @@
 # ── Environment / Secrets ──────────────────────────────────────
+# Contains QC test-account passwords — hand to the QC team directly,
+# never commit (public repo).
+QC-Walkthrough.md
 .env
 .env.local
 .env.*.local
