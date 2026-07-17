@@ -296,9 +296,24 @@ deployed live.
 - **Not deployed yet from this pass**: migration `20260716000000` needs
   `db push`; `process-checkin`, `send-reminders`, and all functions
   importing `_shared/cors.ts` need `functions deploy`.
-- **Still blocked**: RLS policy recovery — supabase CLI session expired;
-  run `npx supabase login`, then `supabase db dump --linked` (or copy from
-  Dashboard → Database → Policies) and commit as a migration.
+- ~~RLS policy recovery~~ **Resolved 2026-07-17**: all 64 live policies
+  verified present in `20260714030000_rls_baseline_documentation.sql`
+  (zero drift vs production). Verification + all further live SQL ran via
+  the **Management API query endpoint**
+  (`POST https://api.supabase.com/v1/projects/<ref>/database/query` with a
+  `sbp_` personal access token) — this works from machines where the direct
+  DB port is blocked, and is the reliable path for this environment.
+- **Security fix 2026-07-17**: live policies let members INSERT/DELETE
+  their own `fee_payments` rows (fabricate/erase revenue records from the
+  browser console). Dropped in `20260717000000` — applied to production
+  via the Management API and verified. Members keep read-only access.
+- **Deployed 2026-07-17**: all 8 edge functions redeployed (timezone fix,
+  duplicate-guard handling, CORS, configurable sender all live); the
+  attendance partial unique index confirmed live (user ran the migration
+  in the SQL Editor). Note: migrations applied via SQL Editor / Management
+  API are NOT recorded in the `supabase_migrations` ledger — reconcile
+  with `migration repair --status applied <version>` if `db push` is ever
+  used from a machine that can reach the DB port.
 
 **Completed 2026-07-14 (security audit / third hardening pass):**
 - **Fixed**: `send-reminders` and `web-push-notify` had zero authorization checks — any holder of the public anon key (visible in the deployed JS bundle) could call them directly to mass-trigger member emails or, once VAPID is configured, push arbitrary notification content to any gym. Both now require a valid caller JWT + `gym_owner`/`staff`/`super_admin` role, and `send-reminders`' `welcome` path now checks the target member belongs to the caller's own gym (was an unscoped cross-tenant lookup).
