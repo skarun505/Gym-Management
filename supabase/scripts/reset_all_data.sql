@@ -46,9 +46,19 @@ do $$
 begin
   execute 'truncate table staff, staff_attendance, gym_shifts, fee_payments, '
     || 'gym_announcements, gym_challenges, challenge_completions, nutrition_logs, '
-    || 'progress_logs, trainer_notes, diet_charts, push_subscriptions cascade';
+    || 'progress_logs, trainer_notes, diet_charts, push_subscriptions, '
+    || 'notification_logs cascade';
 exception when undefined_table then
   raise notice 'Some untracked tables did not exist — skipped. This is expected on a fresh project.';
+end $$;
+
+-- audit_logs (added 2026-07-14): wipe too so the trail starts fresh with
+-- the new test data. Comment this out if you want to keep the history.
+do $$
+begin
+  execute 'truncate table audit_logs';
+exception when undefined_table then
+  raise notice 'audit_logs did not exist — skipped.';
 end $$;
 
 -- ============================================================
@@ -64,4 +74,18 @@ end $$;
 --   b) Script it with the Admin API, one call per user:
 --        supabaseAdmin.auth.admin.deleteUser(userId)
 --      (needed if you have too many users to select by hand)
+-- ============================================================
+
+-- ============================================================
+-- Step 3: re-bootstrap your super_admin (the truncate wiped its
+-- profile row, and step 2 deleted its auth user).
+--
+--   a) Dashboard → Authentication → Users → Add user →
+--      enter your email + password, check "Auto Confirm User".
+--   b) Copy the new user's UUID from the users list, then run:
+--
+--        insert into profiles (id, full_name, role, gym_id)
+--        values ('<paste-uuid-here>', 'Super Admin', 'super_admin', null);
+--
+-- After this you can log into the app and create test gyms.
 -- ============================================================
