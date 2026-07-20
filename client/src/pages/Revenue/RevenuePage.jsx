@@ -48,8 +48,7 @@ export default function RevenuePage() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo]   = useState('');
 
-  // ── Plan gate (all hooks must be above this) ──────────────────────────────
-  if (!canAccess('revenue')) return <UpgradeWall feature="revenue" currentPlan={plan} />;
+  // ── Plan gate — placed AFTER all hooks to comply with React's Rules of Hooks ──────────────────
 
   const fetchAll = async () => {
     if (!user?.gym_id) return;
@@ -235,6 +234,10 @@ export default function RevenuePage() {
   };
 
   useEffect(() => { fetchAll(); }, [user?.gym_id, period, customFrom, customTo]);
+
+  // Plan gate is here — after ALL hooks — to comply with React Rules of Hooks.
+  // Moving it before any hook causes a crash when the plan changes (hook count mismatch).
+  if (!canAccess('revenue')) return <UpgradeWall feature="revenue" currentPlan={plan} />;
 
   const METHOD_ICON = {
     Cash: <Banknote className="w-4 h-4" />,

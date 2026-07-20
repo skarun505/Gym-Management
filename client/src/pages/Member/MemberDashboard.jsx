@@ -193,8 +193,10 @@ export default function MemberDashboard() {
           .select('*, subscription_plans(plan_name, duration)')
           .eq('member_id', memberId).eq('status', 'active')
           .order('end_date', { ascending: true }).limit(1).maybeSingle(),
-        supabase.from('attendance').select('created_at')
-          .eq('member_id', memberId).in('created_at', last7),
+        supabase.from('attendance').select('check_in')
+          .eq('member_id', memberId)
+          .gte('check_in', last7[0])
+          .lte('check_in', last7[6] + 'T23:59:59'),
         supabase.from('member_workout_plans')
           .select('*, workout_plans(id, name, description, workout_exercises(*))')
           .eq('member_id', memberId).eq('is_active', true).maybeSingle(),
@@ -232,7 +234,7 @@ export default function MemberDashboard() {
 
       setStreak(streakRes.data);
       setSub(subRes.data);
-      const days = (attendRes.data || []).map(a => a.created_at);
+      const days = (attendRes.data || []).map(a => (a.check_in || '').split('T')[0]);
       setWeekDays(days);
       setCheckedToday(days.includes(today));
 

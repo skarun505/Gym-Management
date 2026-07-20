@@ -22,7 +22,8 @@ export default function AttendancePage() {
         .from('attendance')
         .select('*, members(full_name, member_code)')
         .eq('gym_id', user.gym_id)
-        .eq('created_at', date)
+        .gte('check_in', date + 'T00:00:00')
+        .lte('check_in', date + 'T23:59:59')
         .order('check_in', { ascending: false });
 
       if (error) throw error;
@@ -68,7 +69,8 @@ export default function AttendancePage() {
         .select('id, check_out')
         .eq('gym_id', user.gym_id)
         .eq('member_id', member.id)
-        .eq('created_at', date)
+        .gte('check_in', date + 'T00:00:00')
+        .lte('check_in', date + 'T23:59:59')
         .is('check_out', null)
         .maybeSingle();
 

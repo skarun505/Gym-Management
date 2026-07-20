@@ -12,9 +12,10 @@ function genMemberCode(gymCode) {
 
 function computeEndDate(startDate, duration) {
   const d = new Date(startDate);
-  if (duration === 'monthly')   d.setMonth(d.getMonth() + 1);
-  else if (duration === 'quarterly') d.setMonth(d.getMonth() + 3);
-  else if (duration === 'yearly')    d.setFullYear(d.getFullYear() + 1);
+  if (duration === 'monthly')          d.setMonth(d.getMonth() + 1);
+  else if (duration === 'quarterly')   d.setMonth(d.getMonth() + 3);
+  else if (duration === 'half_yearly') d.setMonth(d.getMonth() + 6);
+  else if (duration === 'yearly')      d.setFullYear(d.getFullYear() + 1);
   return d.toISOString().split('T')[0];
 }
 

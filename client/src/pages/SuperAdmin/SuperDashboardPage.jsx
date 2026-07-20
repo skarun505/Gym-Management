@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Building2, Users, UserCheck, Activity, TrendingUp, ChevronRight,
@@ -52,7 +52,7 @@ export default function SuperDashboardPage() {
   const [stats,   setStats]     = useState(null);
   const [gyms,    setGyms]      = useState([]);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
       const [gymsRes, membersRes, staffRes, subsRes] = await Promise.all([
@@ -108,7 +108,7 @@ export default function SuperDashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => { fetchAll(); }, []);
 

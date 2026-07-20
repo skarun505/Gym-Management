@@ -46,7 +46,7 @@ function GymProfileTab({ gym, onUpdated }) {
   const { register, handleSubmit, reset, formState: { isSubmitting, isDirty } } = useForm({
     defaultValues: gym,
   });
-  useEffect(() => { reset(gym); }, [gym]);
+  useEffect(() => { reset(gym); }, [gym, reset]);
 
   // Logo upload
   const [logoPreview, setLogoPreview]       = useState(gym?.logo_url || null);
